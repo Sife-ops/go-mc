@@ -17,12 +17,12 @@ import (
 	"github.com/Tnze/go-mc/save/region"
 )
 
-var UseCubiomes = false   // generate a random seed
+var UseCubiomes = true    // generate a random seed
 var UseSeedFile = true    // write cubiomes output to file
 var UseDocker = true      // write cubiomes output to file
-var RavineProximity = 240 // diameter
-var RavineOffsetNegative = (RavineProximity - 16) / 2
-var RavineOffsetPositive = RavineOffsetNegative + 15
+var RavineProximity = 112 // radius
+var RavineOffsetNegative = RavineProximity
+var RavineOffsetPositive = RavineProximity + 15
 
 //go:embed template
 var fsTemplate embed.FS
@@ -74,6 +74,7 @@ func toSector(i int) int {
 }
 
 func main() {
+	// vvv DEBUG SEED vvv
 	godSeed := GodSeed{
 		Seed: "-6916114155717537644",
 		Spawn: Coords{
@@ -85,6 +86,7 @@ func main() {
 			Z: 64,
 		},
 	}
+	// ^^^ DEBUG SEED ^^^
 
 	{
 		if !UseCubiomes {
