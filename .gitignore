@@ -25,3 +25,4 @@ data/packetid/generate.go
 /foo
 seed.txt
 dev.log
+/db.sqlite
