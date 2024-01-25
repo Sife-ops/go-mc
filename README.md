@@ -1,3 +1,7 @@
+# EXPERIMENTAL
+
+You must use [and experimental cubiomes build](https://github.com/Sife-ops/go-mc/tree/experimental).
+
 # Go-MC
 
 ![Version](https://img.shields.io/badge/Minecraft-1.19.3-blue.svg)
