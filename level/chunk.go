@@ -2,11 +2,12 @@ package level
 
 import (
 	"bytes"
-	"errors"
+	// "errors"
 	"fmt"
 	"io"
 	"math/bits"
-	"strconv"
+
+	// "strconv"
 	"strings"
 
 	"github.com/Tnze/go-mc/level/biome"
@@ -43,7 +44,7 @@ func (c *ChunkPos) ReadFrom(r io.Reader) (n int64, err error) {
 type Chunk struct {
 	Sections    []Section
 	HeightMaps  HeightMaps
-	BlockEntity []BlockEntity
+	BlockEntity []BlockEntity // todo delete this
 	Status      ChunkStatus
 }
 
@@ -72,7 +73,7 @@ func ChunkFromSave(c *save.Chunk) (*Chunk, error) {
 	for _, v := range c.Level.Sections {
 		// i := int32(v.Y) - c.YPos
 		// i := int32(v.Y) + 4
-		i := int32(v.Y) + 1 // TODO
+		i := int32(v.Y) + 1 // todo
 		if i < 0 || i >= int32(secs) {
 			// return nil, fmt.Errorf("section Y value %d out of bounds", v.Y)
 			continue
@@ -91,24 +92,24 @@ func ChunkFromSave(c *save.Chunk) (*Chunk, error) {
 		// sections[i].BlockLight = v.BlockLight
 	}
 
-	blockEntities := make([]BlockEntity, len(c.BlockEntities))
-	for i, v := range c.BlockEntities {
-		var tmp struct {
-			ID string `nbt:"id"`
-			X  int32  `nbt:"x"`
-			Y  int32  `nbt:"y"`
-			Z  int32  `nbt:"z"`
-		}
-		if err := v.Unmarshal(&tmp); err != nil {
-			return nil, err
-		}
-		blockEntities[i].Data = v
-		if x, z := int(tmp.X-c.Level.XPos<<4), int(tmp.Z-c.Level.ZPos<<4); !blockEntities[i].PackXZ(x, z) {
-			return nil, errors.New("Packing a XZ(" + strconv.Itoa(x) + ", " + strconv.Itoa(z) + ") out of bound")
-		}
-		blockEntities[i].Y = int16(tmp.Y)
-		blockEntities[i].Type = block.EntityTypes[tmp.ID]
-	}
+	// blockEntities := make([]BlockEntity, len(c.BlockEntities))
+	// for i, v := range c.BlockEntities {
+	// 	var tmp struct {
+	// 		ID string `nbt:"id"`
+	// 		X  int32  `nbt:"x"`
+	// 		Y  int32  `nbt:"y"`
+	// 		Z  int32  `nbt:"z"`
+	// 	}
+	// 	if err := v.Unmarshal(&tmp); err != nil {
+	// 		return nil, err
+	// 	}
+	// 	blockEntities[i].Data = v
+	// 	if x, z := int(tmp.X-c.Level.XPos<<4), int(tmp.Z-c.Level.ZPos<<4); !blockEntities[i].PackXZ(x, z) {
+	// 		return nil, errors.New("Packing a XZ(" + strconv.Itoa(x) + ", " + strconv.Itoa(z) + ") out of bound")
+	// 	}
+	// 	blockEntities[i].Y = int16(tmp.Y)
+	// 	blockEntities[i].Type = block.EntityTypes[tmp.ID]
+	// }
 
 	motionBlocking := c.Heightmaps.MotionBlocking
 	motionBlockingNoLeaves := c.Heightmaps.MotionBlockingNoLeaves
@@ -124,8 +125,8 @@ func ChunkFromSave(c *save.Chunk) (*Chunk, error) {
 			OceanFloor:             NewBitStorage(bitsForHeight, 16*16, oceanFloor),
 			WorldSurface:           NewBitStorage(bitsForHeight, 16*16, worldSurface),
 		},
-		BlockEntity: blockEntities,
-		Status:      ChunkStatus(c.Status),
+		// BlockEntity: blockEntities,
+		Status: ChunkStatus(c.Status),
 	}, nil
 }
 

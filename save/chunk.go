@@ -17,18 +17,27 @@ type Chunk struct {
 		XPos int32 `nbt:"xPos"`
 		ZPos int32 `nbt:"zPos"`
 		// YPos          int32            `nbt:"yPos"`
+		// Structures nbt.RawMessage `nbt:"Structures"` // todo bring back structures
+		Structures struct {
+			Starts struct {
+				Shipwreck struct {
+					ID       string `nbt:"id"`
+					Children []struct {
+						Template string
+					}
+				} `nbt:"shipwreck"`
+			}
+		}
 		Sections []Section `nbt:"Sections"`
 	} `nbt:"Level"`
-	BlockEntities []nbt.RawMessage `nbt:"block_entities"`
-	// TileEntities  []nbt.RawMessage `nbt:"TileEntities"` // todo
-	// Structures    nbt.RawMessage   `nbt:"structures"` // todo bring back structures
-	Heightmaps struct {
+	// BlockEntities []nbt.RawMessage `nbt:"block_entities"` // todo move or delete
+	// TileEntities  []nbt.RawMessage `nbt:"TileEntities"`
+	Heightmaps struct { // todo move?
 		MotionBlocking         []uint64 `nbt:"MOTION_BLOCKING"`
 		MotionBlockingNoLeaves []uint64 `nbt:"MOTION_BLOCKING_NO_LEAVES"`
 		OceanFloor             []uint64 `nbt:"OCEAN_FLOOR"`
 		WorldSurface           []uint64 `nbt:"WORLD_SURFACE"`
 	}
-
 	// BlockTicks     nbt.RawMessage `nbt:"block_ticks"`
 	// FluidTicks     nbt.RawMessage `nbt:"fluid_ticks"`
 	// PostProcessing nbt.RawMessage

@@ -17,6 +17,13 @@ import (
 	"github.com/Tnze/go-mc/save/region"
 )
 
+var UseCubiomes = false   // generate a random seed
+var UseSeedFile = true    // write cubiomes output to file
+var UseDocker = true      // write cubiomes output to file
+var RavineProximity = 240 // diameter
+var RavineOffsetNegative = (RavineProximity - 16) / 2
+var RavineOffsetPositive = RavineOffsetNegative + 15
+
 //go:embed template
 var fsTemplate embed.FS
 
@@ -29,6 +36,20 @@ type GodSeed struct {
 	Seed      string // todo mb use int?
 	Spawn     Coords
 	Shipwreck Coords
+}
+
+func (g *GodSeed) RavineArea() (int, int, int, int) {
+	return g.Shipwreck.X - RavineOffsetNegative,
+		g.Shipwreck.Z - RavineOffsetNegative,
+		g.Shipwreck.X + RavineOffsetPositive,
+		g.Shipwreck.Z + RavineOffsetPositive
+}
+
+func (g *GodSeed) ShipwreckArea() (int, int, int, int) {
+	return g.Shipwreck.X - 16,
+		g.Shipwreck.Z - 16,
+		g.Shipwreck.X + 31,
+		g.Shipwreck.Z + 31
 }
 
 func mustInt(i int, err error) int {
@@ -66,6 +87,9 @@ func main() {
 	}
 
 	{
+		if !UseCubiomes {
+			goto SkipCubiomes
+		}
 		cmdCubiomes := exec.Command("./a.out")
 		outCubiomes, err := cmdCubiomes.Output()
 		if err != nil {
@@ -85,10 +109,12 @@ func main() {
 			},
 		}
 	}
-	goto SkipCubiomes
 SkipCubiomes:
 
 	{
+		if !UseSeedFile {
+			goto SkipSeedFile
+		}
 		fileSeedOut, err := os.Create("./seed.txt")
 		if err != nil {
 			log.Fatal(err)
@@ -98,101 +124,99 @@ SkipCubiomes:
 		fmt.Fprintf(fileSeedOut, "shipwreck: %d, %d\n", godSeed.Shipwreck.X, godSeed.Shipwreck.Z)
 		fileSeedOut.Close()
 	}
-	goto SkipSeedFile
 SkipSeedFile:
 
-	tmplComposeMc, err := template.
-		New("compose-mc.yml").
-		ParseFS(fsTemplate, "template/compose-mc.yml")
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = os.MkdirAll("./tmp/mc", os.ModePerm) // todo use exec?
-	if err != nil {
-		log.Fatal(err)
-	}
-	fileComposeMc, err := os.Create("./tmp/mc/docker-compose.yml")
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = tmplComposeMc.Execute(fileComposeMc, map[string]interface{}{
-		"ServiceName": "mc",
-		"Seed":        godSeed.Seed,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = fileComposeMc.Close()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	shutDown := make(chan bool)
-	go func(sd chan bool) {
-		cmdRmRfWorld := exec.Command("rm", "-rf", "./tmp/mc/data/world")
-		if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
-			log.Println(string(outRmRfWorld))
+	ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2 := godSeed.RavineArea()
+	{
+		if !UseDocker {
+			goto SkipDocker
+		}
+		tmplComposeMc, err := template.
+			New("compose-mc.yml").
+			ParseFS(fsTemplate, "template/compose-mc.yml")
+		if err != nil {
 			log.Fatal(err)
 		}
-		cmdComposeMc := exec.Command("docker-compose", "-f", "./tmp/mc/docker-compose.yml", "up")
-		if outComposeMc, err := cmdComposeMc.Output(); err != nil {
-			log.Println(string(outComposeMc))
+		err = os.MkdirAll("./tmp/mc", os.ModePerm) // todo use exec?
+		if err != nil {
 			log.Fatal(err)
 		}
-		sd <- true
-	}(shutDown)
-
-	// wait for server to start
-	// todo use goroutine
-	for {
-		log.Println("trying 2 connect 2 srvr")
-		cmdEchoMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "\"msg @p echo\"")
-		if _, err := cmdEchoMc.Output(); err != nil {
-			time.Sleep(500 * time.Millisecond)
-			continue
+		fileComposeMc, err := os.Create("./tmp/mc/docker-compose.yml")
+		if err != nil {
+			log.Fatal(err)
 		}
-		break
-	}
+		err = tmplComposeMc.Execute(fileComposeMc, map[string]interface{}{
+			"ServiceName": "mc",
+			"Seed":        godSeed.Seed,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = fileComposeMc.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	// forceload chunks
-	cmdForceload := exec.Command(
-		"docker",
-		"exec",
-		"mc-mc-1",
-		"rcon-cli",
-		fmt.Sprintf(
-			"forceload add %d %d %d %d",
-			godSeed.Shipwreck.X-112,
-			godSeed.Shipwreck.Z-112,
-			godSeed.Shipwreck.X+127,
-			godSeed.Shipwreck.Z+127,
-		),
-	)
-	outForceload, err := cmdForceload.Output()
-	log.Println(string(outForceload))
-	if err != nil {
-		log.Fatal(err)
-	}
+		shutDown := make(chan bool)
+		go func(sd chan bool) {
+			cmdRmRfWorld := exec.Command("rm", "-rf", "./tmp/mc/data/world")
+			if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
+				log.Println(string(outRmRfWorld))
+				log.Fatal(err)
+			}
+			cmdComposeMc := exec.Command("docker-compose", "-f", "./tmp/mc/docker-compose.yml", "up")
+			if outComposeMc, err := cmdComposeMc.Output(); err != nil {
+				log.Println(string(outComposeMc))
+				log.Fatal(err)
+			}
+			sd <- true
+		}(shutDown)
 
-	// stop server
-	cmdStopMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "stop")
-	outStopMc, err := cmdStopMc.Output()
-	log.Println(string(outStopMc))
-	if err != nil {
-		log.Fatal(err)
+		// wait for server to start
+		// todo use goroutine
+		for {
+			log.Println("trying 2 connect 2 srvr")
+			cmdEchoMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "\"msg @p echo\"")
+			if _, err := cmdEchoMc.Output(); err != nil {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			break
+		}
+
+		// forceload chunks
+		cmdForceload := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli",
+			fmt.Sprintf("forceload add %d %d %d %d", ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2),
+		)
+		outForceload, err := cmdForceload.Output()
+		log.Println(string(outForceload))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// stop server
+		cmdStopMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "stop")
+		outStopMc, err := cmdStopMc.Output()
+		log.Println(string(outStopMc))
+		if err != nil {
+			log.Fatal(err)
+		}
+		<-shutDown
 	}
-	<-shutDown
+SkipDocker:
 
 	// this part is RLLY bad
+	shipwreckAreaX1, shipwreckAreaZ1, shipwreckAreaX2, shipwreckAreaZ2 := godSeed.ShipwreckArea()
+	magmaRavineChunks := []Coords{}
+	shipwrecksWithIron := []string{}
 	for rs := 0; rs < 4; rs++ {
 		regionX := (rs % 2) - 1
 		regionZ := (rs / 2) - 1
 
-		x1 := godSeed.Shipwreck.X - 112
-		z1 := godSeed.Shipwreck.Z - 112
-		x2 := godSeed.Shipwreck.X + 127
-		z2 := godSeed.Shipwreck.Z + 127
-
+		x1 := ravineAreaX1
+		z1 := ravineAreaZ1
+		x2 := ravineAreaX2
+		z2 := ravineAreaZ2
 		if regionX < 0 {
 			if x1 >= 0 {
 				continue
@@ -208,7 +232,6 @@ SkipSeedFile:
 				x1 = 0
 			}
 		}
-
 		if regionZ < 0 {
 			if z1 >= 0 {
 				continue
@@ -243,19 +266,16 @@ SkipSeedFile:
 				// log.Println(r.ExistSector(0, 0))
 				data, err := region.ReadSector(toSector(xC), toSector(zC))
 				if err != nil {
-					log.Fatalf("todo %v", err)
-				}
-				if err != nil {
 					log.Fatal(err)
 				}
 				var chunkSave save.Chunk
 				err = chunkSave.Load(data)
 				if err != nil {
-					log.Fatalf("todo %v", err)
+					log.Fatal(err)
 				}
 				chunkLevel, err := level.ChunkFromSave(&chunkSave)
 				if err != nil {
-					log.Fatalf("todo %v", err)
+					log.Fatal(err)
 				}
 				// todo check one layer only
 				obby, mb := 0, 0
@@ -269,48 +289,95 @@ SkipSeedFile:
 					}
 				}
 				if obby >= 30 && mb >= 10 {
-					log.Printf("magma ravine %d,%d", xC, zC)
+					magmaRavineChunks = append(magmaRavineChunks, Coords{xC, zC})
 				}
 			}
 		}
 
+		x1 = shipwreckAreaX1
+		z1 = shipwreckAreaZ1
+		x2 = shipwreckAreaX2
+		z2 = shipwreckAreaZ2
+		if regionX < 0 {
+			if x1 >= 0 {
+				goto CloseRegion
+			}
+			if x2 >= 0 {
+				x2 = -1
+			}
+		} else {
+			if x2 < 0 {
+				goto CloseRegion
+			}
+			if x1 < 0 {
+				x1 = 0
+			}
+		}
+		if regionZ < 0 {
+			if z1 >= 0 {
+				goto CloseRegion
+			}
+			if z2 >= 0 {
+				z2 = -1
+			}
+		} else {
+			if z2 < 0 {
+				goto CloseRegion
+			}
+			if z1 < 0 {
+				z1 = 0
+			}
+		}
+
+		for xC := x1 / 16; xC < (x2+1)/16; xC++ {
+			for zC := z1 / 16; zC < (z2+1)/16; zC++ {
+				data, err := region.ReadSector(toSector(xC), toSector(zC))
+				if err != nil {
+					log.Fatal(err)
+				}
+				var chunkSave save.Chunk
+				err = chunkSave.Load(data)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if len(chunkSave.Level.Structures.Starts.Shipwreck.Children) < 1 {
+					continue
+				}
+				for _, v := range chunkSave.Level.Structures.Starts.Shipwreck.Children {
+					if v.Template == "minecraft:shipwreck/rightsideup_backhalf" ||
+						v.Template == "minecraft:shipwreck/rightsideup_backhalf_degraded" ||
+						v.Template == "minecraft:shipwreck/rightsideup_full" ||
+						v.Template == "minecraft:shipwreck/rightsideup_full_degraded" ||
+						v.Template == "minecraft:shipwreck/sideways_backhalf" ||
+						v.Template == "minecraft:shipwreck/sideways_backhalf_degraded" ||
+						v.Template == "minecraft:shipwreck/sideways_full" ||
+						v.Template == "minecraft:shipwreck/sideways_full_degraded" ||
+						v.Template == "minecraft:shipwreck/upsidedown_backhalf" ||
+						v.Template == "minecraft:shipwreck/upsidedown_backhalf_degraded" ||
+						v.Template == "minecraft:shipwreck/upsidedown_full" ||
+						v.Template == "minecraft:shipwreck/upsidedown_full_degraded" ||
+						v.Template == "minecraft:shipwreck/with_mast" ||
+						v.Template == "minecraft:shipwreck/with_mast_degraded" {
+						shipwrecksWithIron = append(shipwrecksWithIron, v.Template)
+					}
+				}
+			}
+		}
+
+	CloseRegion:
 		region.Close()
 	}
 
-	// todo read structure data 4 shipwreck variant
-	// todo detect hard block above chest
-	// var chests []int
-	// for o := 0; o < 9; o++ {
-	// 	sectorX := toSector(godSeed.Shipwreck.X) - 1 + (o % 3)
-	// 	sectorZ := toSector(godSeed.Shipwreck.Z) - 1 + (o / 3)
-	// 	if sectorX < 0 || sectorZ < 0 {
-	// 		log.Println("warning: shipwreck may be in another region!")
-	// 		continue
-	// 	}
-	// 	data, err := region.ReadSector(sectorX, sectorZ)
-	// 	if err != nil {
-	// 		log.Fatalf("todo %v", err)
-	// 	}
-	// 	var chunkSave save.Chunk
-	// 	err = chunkSave.Load(data)
-	// 	if err != nil {
-	// 		log.Fatalf("todo %v", err)
-	// 	}
-	// 	chunkLevel, err := level.ChunkFromSave(&chunkSave)
-	// 	if err != nil {
-	// 		log.Fatalf("todo %v", err)
-	// 	}
-	// 	// section 2 to 4 (3 to 5)
-	// 	for section := 3; section < 6; section++ {
-	// 		for i := 0; i < 16*16*16; i++ {
-	// 			x := block.StateList[chunkLevel.Sections[section].GetBlock(i)].ID()
-	// 			if x == "minecraft:chest" {
-	// 				log.Printf("chest detected! %d", i)
-	// 				chests = append(chests, i)
-	// 			}
-	// 		}
-	// 	}
-	// }
+	log.Println("====================")
+	log.Println("> magma ravine")
+	if len(magmaRavineChunks) > 0 {
+		log.Println(">", magmaRavineChunks)
+	}
+	log.Println("====================")
+	log.Println("> iron shipwreck")
+	if len(shipwrecksWithIron) > 0 {
+		log.Println(">", shipwrecksWithIron)
+	}
 
 	return
 }
