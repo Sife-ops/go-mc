@@ -1,6 +1,6 @@
 # EXPERIMENTAL
 
-You must use [and experimental cubiomes build](https://github.com/Sife-ops/go-mc/tree/experimental).
+You must use [and experimental cubiomes build](https://github.com/Sife-ops/cubiomes/tree/experimental).
 
 # Go-MC
 
