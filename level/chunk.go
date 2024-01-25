@@ -67,25 +67,28 @@ func EmptyChunk(secs int) *Chunk {
 
 // ChunkFromSave convert save.Chunk to level.Chunk.
 func ChunkFromSave(c *save.Chunk) (*Chunk, error) {
-	secs := len(c.Sections)
+	secs := len(c.Level.Sections)
 	sections := make([]Section, secs)
-	for _, v := range c.Sections {
-		i := int32(v.Y) - c.YPos
+	for _, v := range c.Level.Sections {
+		// i := int32(v.Y) - c.YPos
+		// i := int32(v.Y) + 4
+		i := int32(v.Y) + 1 // TODO
 		if i < 0 || i >= int32(secs) {
-			return nil, fmt.Errorf("section Y value %d out of bounds", v.Y)
+			// return nil, fmt.Errorf("section Y value %d out of bounds", v.Y)
+			continue
 		}
 		var err error
-		sections[i].States, err = readStatesPalette(v.BlockStates.Palette, v.BlockStates.Data)
+		sections[i].States, err = readStatesPalette(v.Palette, v.BlockStates)
 		if err != nil {
 			return nil, err
 		}
-		sections[i].BlockCount = countNoneAirBlocks(&sections[i])
-		sections[i].Biomes, err = readBiomesPalette(v.Biomes.Palette, v.Biomes.Data)
-		if err != nil {
-			return nil, err
-		}
-		sections[i].SkyLight = v.SkyLight
-		sections[i].BlockLight = v.BlockLight
+		// sections[i].BlockCount = countNoneAirBlocks(&sections[i])
+		// sections[i].Biomes, err = readBiomesPalette(v.Biomes.Palette, v.Biomes.Data)
+		// if err != nil {
+		// 	return nil, err
+		// }
+		// sections[i].SkyLight = v.SkyLight
+		// sections[i].BlockLight = v.BlockLight
 	}
 
 	blockEntities := make([]BlockEntity, len(c.BlockEntities))
@@ -100,7 +103,7 @@ func ChunkFromSave(c *save.Chunk) (*Chunk, error) {
 			return nil, err
 		}
 		blockEntities[i].Data = v
-		if x, z := int(tmp.X-c.XPos<<4), int(tmp.Z-c.ZPos<<4); !blockEntities[i].PackXZ(x, z) {
+		if x, z := int(tmp.X-c.Level.XPos<<4), int(tmp.Z-c.Level.ZPos<<4); !blockEntities[i].PackXZ(x, z) {
 			return nil, errors.New("Packing a XZ(" + strconv.Itoa(x) + ", " + strconv.Itoa(z) + ") out of bound")
 		}
 		blockEntities[i].Y = int16(tmp.Y)
@@ -128,6 +131,9 @@ func ChunkFromSave(c *save.Chunk) (*Chunk, error) {
 
 func readStatesPalette(palette []save.BlockState, data []uint64) (paletteData *PaletteContainer[BlocksState], err error) {
 	statePalette := make([]BlocksState, len(palette))
+	if len(palette) < 1 {
+		return
+	}
 	for i, v := range palette {
 		b, ok := block.FromID[v.Name]
 		if !ok {
@@ -170,28 +176,28 @@ func countNoneAirBlocks(sec *Section) (blockCount int16) {
 	return
 }
 
-// ChunkToSave convert level.Chunk to save.Chunk
-func ChunkToSave(c *Chunk, dst *save.Chunk) (err error) {
-	secs := len(c.Sections)
-	sections := make([]save.Section, secs)
-	for i, v := range c.Sections {
-		s := &sections[i]
-		states := &s.BlockStates
-		biomes := &s.Biomes
-		s.Y = int8(int32(i) + dst.YPos)
-		states.Palette, states.Data, err = writeStatesPalette(v.States)
-		if err != nil {
-			return
-		}
-		biomes.Palette, biomes.Data = writeBiomesPalette(v.Biomes)
-		s.SkyLight = v.SkyLight
-		s.BlockLight = v.BlockLight
-	}
-	dst.Sections = sections
-	dst.Heightmaps.MotionBlocking = c.HeightMaps.MotionBlocking.Raw()
-	dst.Status = string(c.Status)
-	return
-}
+// // ChunkToSave convert level.Chunk to save.Chunk
+// func ChunkToSave(c *Chunk, dst *save.Chunk) (err error) {
+// 	secs := len(c.Sections)
+// 	sections := make([]save.Section, secs)
+// 	for i, v := range c.Sections {
+// 		s := &sections[i]
+// 		states := &s.BlockStates
+// 		biomes := &s.Biomes
+// 		s.Y = int8(int32(i) + dst.YPos)
+// 		states.Palette, states.Data, err = writeStatesPalette(v.States)
+// 		if err != nil {
+// 			return
+// 		}
+// 		biomes.Palette, biomes.Data = writeBiomesPalette(v.Biomes)
+// 		s.SkyLight = v.SkyLight
+// 		s.BlockLight = v.BlockLight
+// 	}
+// 	dst.Sections = sections
+// 	dst.Heightmaps.MotionBlocking = c.HeightMaps.MotionBlocking.Raw()
+// 	dst.Status = string(c.Status)
+// 	return
+// }
 
 func writeStatesPalette(paletteData *PaletteContainer[BlocksState]) (palette []save.BlockState, data []uint64, err error) {
 	rawPalette := paletteData.palette.export()

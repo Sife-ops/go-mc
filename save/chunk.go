@@ -12,41 +12,46 @@ import (
 
 // Chunk is 16* chunk
 type Chunk struct {
-	DataVersion   int32
-	XPos          int32            `nbt:"xPos"`
-	YPos          int32            `nbt:"yPos"`
-	ZPos          int32            `nbt:"zPos"`
+	DataVersion int32
+	Level       struct {
+		XPos int32 `nbt:"xPos"`
+		ZPos int32 `nbt:"zPos"`
+		// YPos          int32            `nbt:"yPos"`
+		Sections []Section `nbt:"Sections"`
+	} `nbt:"Level"`
 	BlockEntities []nbt.RawMessage `nbt:"block_entities"`
-	Structures    nbt.RawMessage   `nbt:"structures"`
-	Heightmaps    struct {
+	// TileEntities  []nbt.RawMessage `nbt:"TileEntities"` // todo
+	// Structures    nbt.RawMessage   `nbt:"structures"` // todo bring back structures
+	Heightmaps struct {
 		MotionBlocking         []uint64 `nbt:"MOTION_BLOCKING"`
 		MotionBlockingNoLeaves []uint64 `nbt:"MOTION_BLOCKING_NO_LEAVES"`
 		OceanFloor             []uint64 `nbt:"OCEAN_FLOOR"`
 		WorldSurface           []uint64 `nbt:"WORLD_SURFACE"`
 	}
-	Sections []Section `nbt:"sections"`
 
-	BlockTicks     nbt.RawMessage `nbt:"block_ticks"`
-	FluidTicks     nbt.RawMessage `nbt:"fluid_ticks"`
-	PostProcessing nbt.RawMessage
-	InhabitedTime  int64
-	IsLightOn      byte `nbt:"isLightOn"`
-	LastUpdate     int64
-	Status         string
+	// BlockTicks     nbt.RawMessage `nbt:"block_ticks"`
+	// FluidTicks     nbt.RawMessage `nbt:"fluid_ticks"`
+	// PostProcessing nbt.RawMessage
+	// InhabitedTime int64
+	// IsLightOn  byte `nbt:"isLightOn"`
+	// LastUpdate int64
+	Status string
 }
 
 type Section struct {
 	Y           int8
-	BlockStates struct {
-		Palette []BlockState `nbt:"palette"`
-		Data    []uint64     `nbt:"data"`
-	} `nbt:"block_states"`
-	Biomes struct {
-		Palette []string `nbt:"palette"`
-		Data    []uint64 `nbt:"data"`
-	} `nbt:"biomes"`
-	SkyLight   []byte
-	BlockLight []byte
+	BlockStates []uint64     `nbt:"BlockStates"`
+	Palette     []BlockState `nbt:"Palette"`
+	// BlockStates struct {
+	// 	Palette []BlockState `nbt:"palette"`
+	// 	Data    []uint64     `nbt:"data"`
+	// } `nbt:"block_states"`
+	// Biomes struct {
+	// 	Palette []string `nbt:"palette"`
+	// 	Data    []uint64 `nbt:"data"`
+	// } `nbt:"biomes"`
+	// SkyLight []byte
+	// BlockLight []byte
 }
 
 type BlockState struct {

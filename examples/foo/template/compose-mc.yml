@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  {{.ServiceName}}:
+    image: itzg/minecraft-server
+    tty: true
+    stdin_open: true
+    environment:
+      EULA: "TRUE"
+      VERSION: "1.16.1"
+      SEED: "{{.Seed}}"
+      MEMORY: "2G"
+    volumes:
+      - ./data:/data
