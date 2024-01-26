@@ -234,6 +234,12 @@ func writeBiomesPalette(paletteData *PaletteContainer[BiomesState]) (palette []s
 	return
 }
 
+// todo fix problem with section 0 lmao... if u use section 0 it will crash. the
+// real section 0 in the world is level 1 in the section slice.
+func (c *Chunk) GetBlockID(s int, i int) string {
+	return block.StateList[c.Sections[s].GetBlock(i)].ID()
+}
+
 func (c *Chunk) WriteTo(w io.Writer) (int64, error) {
 	data, err := c.Data()
 	if err != nil {

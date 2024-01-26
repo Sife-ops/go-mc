@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -13,17 +14,9 @@ import (
 
 	"github.com/Tnze/go-mc/cmd/generator/db"
 	"github.com/Tnze/go-mc/level"
-	"github.com/Tnze/go-mc/level/block"
 	"github.com/Tnze/go-mc/save"
 	"github.com/Tnze/go-mc/save/region"
 )
-
-var UseCubiomes = true    // generate a random seed
-var UseSeedFile = true    // write cubiomes output to file
-var UseDocker = true      // write cubiomes output to file
-var RavineProximity = 112 // radius
-var RavineOffsetNegative = RavineProximity
-var RavineOffsetPositive = RavineProximity + 15
 
 //go:embed template
 var fsTemplate embed.FS
@@ -74,24 +67,34 @@ func toSector(i int) int {
 	return i
 }
 
-var Threads = 4
-var JobsInProgress = make(chan struct{}, Threads)
-var Jobs = 10
-var JobsDone = make(chan struct{}, Jobs)
-var Queue1 = make(chan GodSeed, Jobs)
+// todo move to flags
+var UseCubiomes = true    // generate a random seed
+var UseDocker = true      // write cubiomes output to file
+var RavineProximity = 112 // radius
+var RavineOffsetNegative = RavineProximity
+var RavineOffsetPositive = RavineProximity + 15
 
 // todo html
 // todo makefile
+// todo get rid of some fatals
 func main() {
+	flagThreads := flag.Int("t", 2, "threads")
+	flagJobs := flag.Int("j", 2, "jobs")
+	flag.Parse()
+
+	var JobsInProgress = make(chan struct{}, *flagThreads)
+	var JobsDone = make(chan struct{}, *flagJobs)
+	var Queue1 = make(chan GodSeed, *flagJobs)
+
 	if !UseCubiomes {
 		goto SetSeed
 	}
 
 	go func(jip chan struct{}, jd chan struct{}, q1 chan GodSeed) {
-		for len(jd) < Jobs {
-			log.Println(len(jip), "cubiomes instances running")
-			log.Println(len(jd), "cubiomes jobs done")
-			log.Println(len(q1), "items in q1")
+		for len(jd) < *flagJobs {
+			log.Printf("info %d cubiomes instances running", len(jip))
+			log.Printf("info %d cubiomes jobs done", len(jd))
+			log.Printf("info %d items in q1", len(q1))
 			time.Sleep(1 * time.Second)
 		}
 		close(jip)
@@ -99,13 +102,13 @@ func main() {
 		close(q1)
 	}(JobsInProgress, JobsDone, Queue1)
 
-	for t := 0; t < Jobs; t++ {
+	for t := 0; t < *flagJobs; t++ {
 		go func(jip chan struct{}, jd chan struct{}, q1 chan GodSeed) {
 		Wait:
-			for len(jip) >= Threads {
+			for len(jip) >= *flagThreads {
 				time.Sleep(660 * time.Millisecond)
 			}
-			if len(jip) < Threads {
+			if len(jip) < *flagThreads {
 				jip <- struct{}{}
 			} else {
 				goto Wait
@@ -114,9 +117,9 @@ func main() {
 			cmdCubiomes := exec.Command("./a.out")
 			outCubiomes, err := cmdCubiomes.Output()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
-			log.Println(string(outCubiomes))
+			log.Printf("info cubiomes output: %s", string(outCubiomes))
 
 			outCubiomesArr := strings.Split(string(outCubiomes), ":")
 			q1 <- GodSeed{
@@ -165,39 +168,39 @@ Phaze2:
 				New("compose-mc.yml").
 				ParseFS(fsTemplate, "template/compose-mc.yml")
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
 			err = os.MkdirAll("./tmp/mc", os.ModePerm) // todo use exec?
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
 			fileComposeMc, err := os.Create("./tmp/mc/docker-compose.yml")
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
 			err = tmplComposeMc.Execute(fileComposeMc, map[string]interface{}{
 				"ServiceName": "mc",
 				"Seed":        job.Seed,
 			})
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
 			err = fileComposeMc.Close()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
 
 			shutDown := make(chan bool)
 			go func(sd chan bool) {
 				cmdRmRfWorld := exec.Command("rm", "-rf", "./tmp/mc/data/world")
 				if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
-					log.Println(string(outRmRfWorld))
-					log.Fatal(err)
+					log.Printf("info delete world output: %s", string(outRmRfWorld))
+					log.Fatalf("error %v", err)
 				}
 				cmdComposeMc := exec.Command("docker-compose", "-f", "./tmp/mc/docker-compose.yml", "up")
 				if outComposeMc, err := cmdComposeMc.Output(); err != nil {
-					log.Println(string(outComposeMc))
-					log.Fatal(err)
+					log.Printf("info docker-compose output: %s", string(outComposeMc))
+					log.Fatalf("error %v", err)
 				}
 				sd <- true
 			}(shutDown)
@@ -205,7 +208,6 @@ Phaze2:
 			// wait for server to start
 			// todo use goroutine
 			for {
-				// log.Println("trying 2 connect 2 srvr")
 				cmdEchoMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "\"msg @p echo\"")
 				if _, err := cmdEchoMc.Output(); err != nil {
 					time.Sleep(500 * time.Millisecond)
@@ -219,17 +221,17 @@ Phaze2:
 				fmt.Sprintf("forceload add %d %d %d %d", ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2),
 			)
 			outForceload, err := cmdForceload.Output()
-			log.Println(string(outForceload))
+			log.Printf("info rcon forceload output: %s", string(outForceload))
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
 
 			// stop server
 			cmdStopMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "stop")
 			outStopMc, err := cmdStopMc.Output()
-			log.Println(string(outStopMc))
+			log.Printf("info rcon stop output: %s", string(outStopMc))
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("error %v", err)
 			}
 			<-shutDown
 		}
@@ -285,7 +287,7 @@ Phaze2:
 				regionZ,
 			))
 			if err != nil {
-				log.Fatalf("todo %v", err)
+				log.Fatalf("error %v", err)
 			}
 
 			for xC := x1 / 16; xC < (x2+1)/16; xC++ {
@@ -294,28 +296,28 @@ Phaze2:
 					// if !region.ExistSector(0, 0) {
 					// 	log.Fatal("sector no existo")
 					// }
-					// log.Println(r.ExistSector(0, 0))
 
 					data, err := region.ReadSector(toSector(xC), toSector(zC))
 					if err != nil {
-						log.Fatal(err)
+						log.Fatalf("error %v", err)
 					}
 
 					var chunkSave save.Chunk
 					err = chunkSave.Load(data)
 					if err != nil {
-						log.Fatal(err)
+						log.Fatalf("error %v", err)
 					}
 
 					chunkLevel, err := level.ChunkFromSave(&chunkSave)
 					if err != nil {
-						log.Fatal(err)
+						log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
+						goto Next
 					}
 
 					obby, magma, lava := 0, 0, 0
 					y10 := 256 * 10
 					for i := y10; i < y10+256; i++ {
-						x := block.StateList[chunkLevel.Sections[1].GetBlock(i)].ID()
+						x := chunkLevel.GetBlockID(1, i)
 						if x == "minecraft:magma_block" {
 							magma++
 						}
@@ -325,14 +327,12 @@ Phaze2:
 					}
 					y9 := 256 * 9
 					for i := y9; i < y9+256; i++ {
-						x := block.StateList[chunkLevel.Sections[1].GetBlock(i)].ID()
+						x := chunkLevel.GetBlockID(1, i)
 						if x == "minecraft:lava" {
 							lava++
 						}
 					}
-					// todo PARAMETERS
-					// todo PARAMETERS
-					// todo PARAMETERS
+					// todo move to flags
 					if obby >= 30 && magma >= 10 && lava >= 30 {
 						magmaRavineChunks = append(magmaRavineChunks, Coords{xC, zC})
 					}
@@ -378,12 +378,12 @@ Phaze2:
 				for zC := z1 / 16; zC < (z2+1)/16; zC++ {
 					data, err := region.ReadSector(toSector(xC), toSector(zC))
 					if err != nil {
-						log.Fatal(err)
+						log.Fatalf("error %v", err)
 					}
 					var chunkSave save.Chunk
 					err = chunkSave.Load(data)
 					if err != nil {
-						log.Fatal(err)
+						log.Fatalf("error %v", err)
 					}
 					if len(chunkSave.Level.Structures.Starts.Shipwreck.Children) < 1 {
 						continue
@@ -413,28 +413,17 @@ Phaze2:
 			region.Close()
 		}
 
-		log.Println("====================")
-		log.Println("*+*+*+*+*+*+*+*+*+*+")
-		log.Println("====================")
-		log.Println("> seed")
-		log.Println(">", job.Seed)
-		log.Println("====================")
-		log.Println("> magma ravine")
-		if len(magmaRavineChunks) > 0 {
-			log.Println(">", magmaRavineChunks)
-		}
-		log.Println("====================")
-		log.Println("> iron shipwreck")
-		if len(shipwrecksWithIron) > 0 {
-			log.Println(">", shipwrecksWithIron)
-		}
-
-		log.Println("saving seed")
+		log.Printf("info *+*+*+*+*+*+*+*+*+*+")
+		log.Printf("info > seed: %s", job.Seed)
+		log.Printf("info > magma ravine chunks: %d (%v)", len(magmaRavineChunks), magmaRavineChunks)
+		log.Printf("info > shipwrecks with iron: %d (%v)", len(shipwrecksWithIron), shipwrecksWithIron)
+		log.Printf("info saving seed")
 		if _, err := db.Db.Exec(
 			"INSERT INTO seed (seed, ravine_chunks, iron_shipwrecks) VALUES ($1, $2, $3)",
 			job.Seed, len(magmaRavineChunks), len(shipwrecksWithIron),
 		); err != nil {
-			log.Fatal(err)
+			log.Fatalf("error %v", err)
 		}
+	Next:
 	}
 }
