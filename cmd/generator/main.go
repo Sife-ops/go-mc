@@ -76,6 +76,7 @@ var RavineOffsetPositive = RavineProximity + 15
 
 // todo html
 // todo get rid of some fatals
+// todo docker service api 4 golang?
 func main() {
 	flagThreads := flag.Int("t", 2, "threads")
 	flagJobs := flag.Int("j", 2, "jobs")
