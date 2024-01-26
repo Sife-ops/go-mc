@@ -11,7 +11,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/Tnze/go-mc/cmd/foo/db"
+	"github.com/Tnze/go-mc/cmd/generator/db"
 	"github.com/Tnze/go-mc/level"
 	"github.com/Tnze/go-mc/level/block"
 	"github.com/Tnze/go-mc/save"
@@ -24,11 +24,6 @@ var UseDocker = true      // write cubiomes output to file
 var RavineProximity = 112 // radius
 var RavineOffsetNegative = RavineProximity
 var RavineOffsetPositive = RavineProximity + 15
-
-var Jobs = 8
-var Threads = 8
-var JobQueue = make(chan GodSeed, Threads)
-var JobsAdded = make(chan struct{}, Jobs)
 
 //go:embed template
 var fsTemplate embed.FS
@@ -79,23 +74,52 @@ func toSector(i int) int {
 	return i
 }
 
+var Threads = 4
+var JobsInProgress = make(chan struct{}, Threads)
+var Jobs = 10
+var JobsDone = make(chan struct{}, Jobs)
+var Queue1 = make(chan GodSeed, Jobs)
+
+// todo html
+// todo makefile
 func main() {
 	if !UseCubiomes {
 		goto SetSeed
 	}
+
+	go func(jip chan struct{}, jd chan struct{}, q1 chan GodSeed) {
+		for len(jd) < Jobs {
+			log.Println(len(jip), "cubiomes instances running")
+			log.Println(len(jd), "cubiomes jobs done")
+			log.Println(len(q1), "items in q1")
+			time.Sleep(1 * time.Second)
+		}
+		close(jip)
+		close(jd)
+		close(q1)
+	}(JobsInProgress, JobsDone, Queue1)
+
 	for t := 0; t < Jobs; t++ {
-		go func(jobQueue chan GodSeed, jobsAdded chan struct{}) {
+		go func(jip chan struct{}, jd chan struct{}, q1 chan GodSeed) {
+		Wait:
+			for len(jip) >= Threads {
+				time.Sleep(660 * time.Millisecond)
+			}
+			if len(jip) < Threads {
+				jip <- struct{}{}
+			} else {
+				goto Wait
+			}
+
 			cmdCubiomes := exec.Command("./a.out")
 			outCubiomes, err := cmdCubiomes.Output()
 			if err != nil {
 				log.Fatal(err)
 			}
 			log.Println(string(outCubiomes))
+
 			outCubiomesArr := strings.Split(string(outCubiomes), ":")
-			for len(jobQueue) >= Threads {
-				time.Sleep(500 * time.Millisecond)
-			}
-			jobQueue <- GodSeed{
+			q1 <- GodSeed{
 				Seed: outCubiomesArr[0],
 				Spawn: Coords{
 					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
@@ -106,18 +130,15 @@ func main() {
 					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
 				},
 			}
-			jobsAdded <- struct{}{}
-			if len(jobsAdded) >= Jobs {
-				close(jobQueue)
-				close(jobsAdded)
-			}
-		}(JobQueue, JobsAdded)
+			<-jip
+			jd <- struct{}{}
+		}(JobsInProgress, JobsDone, Queue1)
 	}
 	goto Phaze2
 
 SetSeed:
 	// vvv DEBUG SEED vvv
-	JobQueue <- GodSeed{
+	Queue1 <- GodSeed{
 		Seed: "-6916114155717537644",
 		Spawn: Coords{
 			X: 0,
@@ -128,33 +149,18 @@ SetSeed:
 			Z: 64,
 		},
 	}
-	close(JobQueue)
-	close(JobsAdded)
+	close(JobsInProgress)
+	close(JobsDone)
+	close(Queue1)
 	// ^^^ DEBUG SEED ^^^
 
-	// todo where r my logs
-	// 	{
-	// 		if !UseSeedFile {
-	// 			goto SkipSeedFile
-	// 		}
-	// 		fileSeedOut, err := os.Create("./seed.txt")
-	// 		if err != nil {
-	// 			log.Fatal(err)
-	// 		}
-	// 		fmt.Fprintf(fileSeedOut, "seed: %s\n", godSeed.Seed)
-	// 		fmt.Fprintf(fileSeedOut, "spawn: %d, %d\n", godSeed.Spawn.X, godSeed.Spawn.Z)
-	// 		fmt.Fprintf(fileSeedOut, "shipwreck: %d, %d\n", godSeed.Shipwreck.X, godSeed.Shipwreck.Z)
-	// 		fileSeedOut.Close()
-	// 	}
-	// SkipSeedFile:
-
 Phaze2:
-	for job := range JobQueue {
+	for job := range Queue1 {
 		ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2 := job.RavineArea()
+		if !UseDocker {
+			goto SkipDocker
+		}
 		{
-			if !UseDocker {
-				goto SkipDocker
-			}
 			tmplComposeMc, err := template.
 				New("compose-mc.yml").
 				ParseFS(fsTemplate, "template/compose-mc.yml")
@@ -233,9 +239,10 @@ Phaze2:
 		shipwreckAreaX1, shipwreckAreaZ1, shipwreckAreaX2, shipwreckAreaZ2 := job.ShipwreckArea()
 		magmaRavineChunks := []Coords{}
 		shipwrecksWithIron := []string{}
-		for rs := 0; rs < 4; rs++ {
-			regionX := (rs % 2) - 1
-			regionZ := (rs / 2) - 1
+		for quadrant := 0; quadrant < 4; quadrant++ {
+			// todo swap x/z
+			regionX := (quadrant % 2) - 1
+			regionZ := (quadrant / 2) - 1
 
 			x1 := ravineAreaX1
 			z1 := ravineAreaZ1
@@ -422,6 +429,7 @@ Phaze2:
 			log.Println(">", shipwrecksWithIron)
 		}
 
+		log.Println("saving seed")
 		if _, err := db.Db.Exec(
 			"INSERT INTO seed (seed, ravine_chunks, iron_shipwrecks) VALUES ($1, $2, $3)",
 			job.Seed, len(magmaRavineChunks), len(shipwrecksWithIron),

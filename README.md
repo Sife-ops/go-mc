@@ -1,6 +1,8 @@
 # EXPERIMENTAL
 
-You must use [and experimental cubiomes build](https://github.com/Sife-ops/cubiomes/tree/experimental).
+Get the [experimental cubiomes build](https://github.com/Sife-ops/cubiomes/tree/experimental) first, then run `sqlite3 db.sqlite < cmd/generator/db/table.sql` in this folderino. 
+
+After that `go build -o bin/generator cmd/generator/main.go` and `./bin/generator` 2 run it. Docker compost must be runnable in ur environment.
 
 # Go-MC
 
