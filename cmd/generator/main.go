@@ -258,6 +258,7 @@ Phaze2:
 			z2 := ravineAreaZ2
 			if regionX < 0 {
 				if x1 >= 0 {
+					log.Printf("info no overlap with -X")
 					goto NextQuadrant
 				}
 				if x2 >= 0 {
@@ -265,6 +266,7 @@ Phaze2:
 				}
 			} else {
 				if x2 < 0 {
+					log.Printf("info no overlap with +X")
 					goto NextQuadrant
 				}
 				if x1 < 0 {
@@ -273,12 +275,14 @@ Phaze2:
 			}
 			if regionZ < 0 {
 				if z1 >= 0 {
+					log.Printf("info no overlap with -Z")
 					goto NextQuadrant
 				}
 				if z2 >= 0 {
 					z2 = -1
 				}
 			} else {
+				log.Printf("info no overlap with +Z")
 				if z2 < 0 {
 					goto NextQuadrant
 				}
@@ -291,7 +295,7 @@ Phaze2:
 		NextQuadrant:
 			log.Printf(
 				"info skipping region %d,%d due to no overlap with ravine area around shipwreck %d %d %d %d",
-				regionX, regionZ, x1, z1, x2, z2,
+				regionX, regionZ, ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2,
 			)
 			continue
 
