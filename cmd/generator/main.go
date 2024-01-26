@@ -86,6 +86,7 @@ func main() {
 	var Queue1 = make(chan GodSeed, *flagJobs)
 
 	if !UseCubiomes {
+		log.Printf("info using set seed")
 		goto SetSeed
 	}
 
@@ -137,6 +138,8 @@ func main() {
 			jd <- struct{}{}
 		}(JobsInProgress, JobsDone, Queue1)
 	}
+
+	log.Printf("info taking it 2 teh next lvl ^_-")
 	goto Phaze2
 
 SetSeed:
@@ -161,6 +164,7 @@ Phaze2:
 	for job := range Queue1 {
 		ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2 := job.RavineArea()
 		if !UseDocker {
+			log.Printf("info skipping docker")
 			goto SkipDocker
 		}
 		{
@@ -221,7 +225,7 @@ Phaze2:
 				fmt.Sprintf("forceload add %d %d %d %d", ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2),
 			)
 			outForceload, err := cmdForceload.Output()
-			log.Printf("info rcon forceload output: %s", string(outForceload))
+			log.Printf("info rcon forceload command output: %s", string(outForceload))
 			if err != nil {
 				log.Fatalf("error %v", err)
 			}
@@ -229,10 +233,12 @@ Phaze2:
 			// stop server
 			cmdStopMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "stop")
 			outStopMc, err := cmdStopMc.Output()
-			log.Printf("info rcon stop output: %s", string(outStopMc))
+			log.Printf("info rcon stop command output: %s", string(outStopMc))
 			if err != nil {
 				log.Fatalf("error %v", err)
 			}
+
+			log.Printf("info waiting for minecraft server to shut down")
 			<-shutDown
 		}
 	SkipDocker:
@@ -252,14 +258,14 @@ Phaze2:
 			z2 := ravineAreaZ2
 			if regionX < 0 {
 				if x1 >= 0 {
-					continue
+					goto NextQuadrant
 				}
 				if x2 >= 0 {
 					x2 = -1
 				}
 			} else {
 				if x2 < 0 {
-					continue
+					goto NextQuadrant
 				}
 				if x1 < 0 {
 					x1 = 0
@@ -267,20 +273,29 @@ Phaze2:
 			}
 			if regionZ < 0 {
 				if z1 >= 0 {
-					continue
+					goto NextQuadrant
 				}
 				if z2 >= 0 {
 					z2 = -1
 				}
 			} else {
 				if z2 < 0 {
-					continue
+					goto NextQuadrant
 				}
 				if z1 < 0 {
 					z1 = 0
 				}
 			}
+			goto OpenRegion
 
+		NextQuadrant:
+			log.Printf(
+				"info skipping region %d,%d due to no overlap with ravine area around shipwreck %d %d %d %d",
+				regionX, regionZ, x1, z1, x2, z2,
+			)
+			continue
+
+		OpenRegion:
 			region, err := region.Open(fmt.Sprintf(
 				"./tmp/mc/data/world/region/r.%d.%d.mca",
 				regionX,
@@ -311,7 +326,8 @@ Phaze2:
 					chunkLevel, err := level.ChunkFromSave(&chunkSave)
 					if err != nil {
 						log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
-						goto Next
+						// goto NextQueueItem
+						continue Phaze2
 					}
 
 					obby, magma, lava := 0, 0, 0
@@ -425,7 +441,5 @@ Phaze2:
 		); err != nil {
 			log.Fatalf("error %v", err)
 		}
-
-	Next:
 	}
 }
