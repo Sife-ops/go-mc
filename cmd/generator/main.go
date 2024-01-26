@@ -258,7 +258,7 @@ Phaze2:
 			z2 := ravineAreaZ2
 			if regionX < 0 {
 				if x1 >= 0 {
-					log.Printf("info no overlap with -X")
+					log.Printf("info no overlap with -X regions")
 					goto NextQuadrant
 				}
 				if x2 >= 0 {
@@ -266,7 +266,7 @@ Phaze2:
 				}
 			} else {
 				if x2 < 0 {
-					log.Printf("info no overlap with +X")
+					log.Printf("info no overlap with +X regions")
 					goto NextQuadrant
 				}
 				if x1 < 0 {
@@ -275,15 +275,15 @@ Phaze2:
 			}
 			if regionZ < 0 {
 				if z1 >= 0 {
-					log.Printf("info no overlap with -Z")
+					log.Printf("info no overlap with -Z regions")
 					goto NextQuadrant
 				}
 				if z2 >= 0 {
 					z2 = -1
 				}
 			} else {
-				log.Printf("info no overlap with +Z")
 				if z2 < 0 {
+					log.Printf("info no overlap with +Z regions")
 					goto NextQuadrant
 				}
 				if z1 < 0 {
