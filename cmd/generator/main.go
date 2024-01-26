@@ -92,11 +92,12 @@ func main() {
 
 	go func(jip chan struct{}, jd chan struct{}, q1 chan GodSeed) {
 		for len(jd) < *flagJobs {
-			log.Printf("info %d cubiomes instances running", len(jip))
-			log.Printf("info %d cubiomes jobs done", len(jd))
-			log.Printf("info %d items in q1", len(q1))
+			// log.Printf("info %d cubiomes instances running", len(jip))
+			// log.Printf("info %d cubiomes jobs done", len(jd))
+			// log.Printf("info %d items in q1", len(q1))
 			time.Sleep(1 * time.Second)
 		}
+		log.Printf("info ==&==&==&==&==&==&==")
 		log.Printf("info shutting down channels")
 		close(jip)
 		close(jd)
@@ -161,7 +162,9 @@ SetSeed:
 	// ^^^ DEBUG SEED ^^^
 
 Phaze2:
-	for job := range Queue1 {
+	for iJob := 0; iJob < *flagJobs; iJob++ {
+		job := <-Queue1
+
 		ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2 := job.RavineArea()
 		if !UseDocker {
 			log.Printf("info skipping docker")
@@ -196,14 +199,16 @@ Phaze2:
 
 			shutDown := make(chan bool)
 			go func(sd chan bool) {
+				log.Printf("info deleting previous world folder")
 				cmdRmRfWorld := exec.Command("rm", "-rf", "./tmp/mc/data/world")
 				if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
-					log.Printf("info delete world output: %s", string(outRmRfWorld))
+					log.Printf("error delete world output: %s", string(outRmRfWorld))
 					log.Fatalf("error %v", err)
 				}
+				log.Printf("info starting minecraft server")
 				cmdComposeMc := exec.Command("docker-compose", "-f", "./tmp/mc/docker-compose.yml", "up")
 				if outComposeMc, err := cmdComposeMc.Output(); err != nil {
-					log.Printf("info docker-compose output: %s", string(outComposeMc))
+					log.Printf("error docker-compose output: %s", string(outComposeMc))
 					log.Fatalf("error %v", err)
 				}
 				sd <- true
