@@ -75,7 +75,6 @@ var RavineOffsetNegative = RavineProximity
 var RavineOffsetPositive = RavineProximity + 15
 
 // todo html
-// todo makefile
 // todo get rid of some fatals
 func main() {
 	flagThreads := flag.Int("t", 2, "threads")
@@ -97,6 +96,7 @@ func main() {
 			log.Printf("info %d items in q1", len(q1))
 			time.Sleep(1 * time.Second)
 		}
+		log.Printf("info shutting down channels")
 		close(jip)
 		close(jd)
 		close(q1)
@@ -418,12 +418,14 @@ Phaze2:
 		log.Printf("info > magma ravine chunks: %d (%v)", len(magmaRavineChunks), magmaRavineChunks)
 		log.Printf("info > shipwrecks with iron: %d (%v)", len(shipwrecksWithIron), shipwrecksWithIron)
 		log.Printf("info saving seed")
+
 		if _, err := db.Db.Exec(
 			"INSERT INTO seed (seed, ravine_chunks, iron_shipwrecks) VALUES ($1, $2, $3)",
 			job.Seed, len(magmaRavineChunks), len(shipwrecksWithIron),
 		); err != nil {
 			log.Fatalf("error %v", err)
 		}
+
 	Next:
 	}
 }
