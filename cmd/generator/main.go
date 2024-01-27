@@ -140,6 +140,11 @@ Phaze2:
 			goto SkipDocker
 		}
 		{
+			log.Printf("info removing old container")
+			if err := RemoveMcContainer(); err != nil {
+				log.Fatalf("error %v", err)
+			}
+
 			log.Printf("info deleting previous world folder")
 			cmdRmRfWorld := exec.Command("rm", "-rf",
 				fmt.Sprintf("%s/tmp/mc/data/world", MustString(os.Getwd())),
@@ -291,8 +296,9 @@ Phaze2:
 
 					chunkLevel, err := level.ChunkFromSave(&chunkSave)
 					if err != nil {
-						log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
-						continue Phaze2
+						log.Fatalf("error %v", err)
+						// log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
+						// continue Phaze2
 					}
 
 					obby, magma, lava := 0, 0, 0

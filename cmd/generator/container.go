@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -16,13 +17,32 @@ import (
 )
 
 var DockerClient *client.Client
+var ContainerName = "McServerTodo"
 
 func init() {
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
-		panic(err)
+		log.Fatalf("error %v", err)
 	}
 	DockerClient = dockerClient
+}
+
+func RemoveMcContainer() error {
+	cl, err := DockerClient.ContainerList(context.TODO(), types.ContainerListOptions{
+		All: true,
+	})
+	if err != nil {
+		return err
+	}
+	for _, v := range cl {
+		if strings.Contains(v.Names[0], ContainerName) {
+			if err := DockerClient.ContainerRemove(context.TODO(), v.ID, types.ContainerRemoveOptions{}); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
 }
 
 func ContainerCreateMc(seed string) (container.CreateResponse, error) {
@@ -54,10 +74,11 @@ func ContainerCreateMc(seed string) (container.CreateResponse, error) {
 		},
 		&network.NetworkingConfig{},
 		&ocispec.Platform{},
-		"McServerTodo",
+		ContainerName,
 	)
 }
 
+// todo remove container at start
 func AwaitMcStopped(ms chan error, cid string) {
 	for true {
 		if ci, err := DockerClient.ContainerInspect(context.TODO(), cid); err != nil {
@@ -69,15 +90,10 @@ func AwaitMcStopped(ms chan error, cid string) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	log.Printf("info removing container")
-	if err := DockerClient.ContainerRemove(context.TODO(), cid, types.ContainerRemoveOptions{}); err != nil {
-		ms <- err
-		return
-	}
-
 	ms <- nil
 }
 
+// todo be able 2c rcon stdout???
 func AwaitMcStarted(ms chan error, cid string) {
 	for true {
 		if ec, err := McExec(cid, []string{"rcon-cli", "msg @p echo"}); err != nil {
