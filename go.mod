@@ -8,6 +8,7 @@ require (
 	github.com/iancoleman/strcase v0.1.3
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mattn/go-sqlite3 v1.14.20
+	github.com/opencontainers/image-spec v1.0.2
 	golang.org/x/exp v0.0.0-20220314205449-43aec2f8a4e7
 )
 
@@ -22,7 +23,6 @@ require (
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/sys v0.16.0 // indirect
