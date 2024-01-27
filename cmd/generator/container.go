@@ -58,14 +58,12 @@ func ContainerCreateMc(seed string) (container.CreateResponse, error) {
 	)
 }
 
-func AwaitMcStopped(ms chan bool, cid string) {
-	log.Printf("info waiting for server to stop")
+func AwaitMcStopped(ms chan error, cid string) {
 	for true {
-		ci, err := DockerClient.ContainerInspect(context.TODO(), cid)
-		if err != nil {
-			log.Fatalf("error %v", err)
-		}
-		if !ci.State.Running {
+		if ci, err := DockerClient.ContainerInspect(context.TODO(), cid); err != nil {
+			ms <- err
+			return
+		} else if !ci.State.Running {
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -73,25 +71,28 @@ func AwaitMcStopped(ms chan bool, cid string) {
 
 	log.Printf("info removing container")
 	if err := DockerClient.ContainerRemove(context.TODO(), cid, types.ContainerRemoveOptions{}); err != nil {
-		log.Fatalf("error %v", err)
+		ms <- err
+		return
 	}
 
-	ms <- true
+	ms <- nil
 }
 
-func AwaitMcStarted(ms chan bool, cid string) {
+func AwaitMcStarted(ms chan error, cid string) {
 	for true {
 		if ec, err := McExec(cid, []string{"rcon-cli", "msg @p echo"}); err != nil {
-			log.Fatalf("error %v", err)
+			ms <- err
+			return
 		} else if ec == 0 {
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	ms <- true
+	ms <- nil
 }
 
+// todo return IDResponse?
 func McExec(cid string, cmd []string) (int, error) {
 	ec, err := DockerClient.ContainerExecCreate(context.TODO(), cid, types.ExecConfig{
 		AttachStderr: true,

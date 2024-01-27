@@ -154,14 +154,16 @@ Phaze2:
 				log.Fatalf("error %v", err)
 			}
 
-			McStopped := make(chan bool)
+			McStopped := make(chan error)
 			go AwaitMcStopped(McStopped, mc.ID)
 
-			McStarted := make(chan bool)
+			McStarted := make(chan error)
 			go AwaitMcStarted(McStarted, mc.ID)
 
 			log.Printf("info waiting for minecraft server to start")
-			<-McStarted
+			if err := <-McStarted; err != nil {
+				log.Fatalf("error %v", err)
+			}
 
 			// forceload chunks
 			//overworld
@@ -196,7 +198,10 @@ Phaze2:
 				log.Printf("info rcon stop: %d", ec)
 			}
 
-			<-McStopped
+			log.Printf("info waiting for minecraft server to stop")
+			if err := <-McStopped; err != nil {
+				log.Fatalf("error %v", err)
+			}
 		}
 	SkipDocker:
 
