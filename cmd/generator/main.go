@@ -2,113 +2,21 @@ package main
 
 import (
 	"context"
-	"embed"
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
 
 	"github.com/Tnze/go-mc/level"
 	"github.com/Tnze/go-mc/save"
 	"github.com/Tnze/go-mc/save/region"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
-
-//go:embed template
-var fsTemplate embed.FS
-
-type Coords struct {
-	X int
-	Z int
-}
-
-type GodSeed struct {
-	Seed      string // todo mb use int?
-	Spawn     Coords
-	Shipwreck Coords
-	Bastion   Coords
-	Fortress  Coords
-}
-
-func (g *GodSeed) RavineArea() (int, int, int, int) {
-	return g.Shipwreck.X - RavineOffsetNegative,
-		g.Shipwreck.Z - RavineOffsetNegative,
-		g.Shipwreck.X + RavineOffsetPositive,
-		g.Shipwreck.Z + RavineOffsetPositive
-}
-
-func (g *GodSeed) ShipwreckArea() (int, int, int, int) {
-	return g.Shipwreck.X - 16,
-		g.Shipwreck.Z - 16,
-		g.Shipwreck.X + 31,
-		g.Shipwreck.Z + 31
-}
-
-func (g *GodSeed) NetherChunksToBastion() (netherChunks2Load []Coords) {
-	bz, bx := g.Bastion.Z+8, g.Bastion.X+8
-	// log.Printf("info bastion chunk center coords %d,%d", bx, bz)
-	s := float64(bz) / float64(bx)
-	// log.Printf("info bastion slope %f", s)
-	bxa := math.Abs(float64(bx))
-
-	for i := 1; i < int(bxa); i++ {
-		x := i
-		if bx < 0 {
-			x = i * -1
-		}
-
-		a, b := int(math.Floor(float64(x)/16)), int(math.Floor(float64(x)*s/16))
-		hasChunk := false
-		for _, v := range netherChunks2Load {
-			if v.X == a && v.Z == b {
-				hasChunk = true
-			}
-		}
-		if hasChunk == false {
-			netherChunks2Load = append(netherChunks2Load, Coords{a, b})
-		}
-	}
-	return
-}
-
-func mustInt(i int, err error) int {
-	if err != nil {
-		panic(err)
-	}
-	return i
-}
-
-func mustString(i string, err error) string {
-	if err != nil {
-		panic(err)
-	}
-	return i
-}
-
-func toRegion(i int) int {
-	if i < 0 {
-		return -1
-	}
-	return 0
-}
-
-func toSector(i int) int {
-	if i < 0 {
-		return 32 + i
-	}
-	return i
-}
 
 // todo move to flags
 var UseCubiomes = true    // generate a random seed
@@ -124,150 +32,6 @@ func main() {
 	flagThreads := flag.Int("t", 2, "threads")
 	flagJobs := flag.Int("j", 2, "jobs")
 	flag.Parse()
-
-	//
-
-	c, err := DockerClient.ContainerCreate(
-		context.TODO(),
-		&container.Config{
-			Image:     "itzg/minecraft-server",
-			Tty:       true,
-			OpenStdin: true,
-			Env: []string{
-				"EULA=true",
-				"VERSION=1.16.1",
-				"SEED=123",
-				"MEMORY=2G",
-			},
-			// todo remove volumes?
-			Volumes: map[string]struct{}{
-				"./tmp/mc/data:/data": {},
-			},
-		},
-		&container.HostConfig{
-			Mounts: []mount.Mount{
-				{
-					Type:   mount.TypeBind,
-					Source: fmt.Sprintf("%s/tmp/mc/data", mustString(os.Getwd())),
-					Target: "/data",
-				},
-			},
-		},
-		&network.NetworkingConfig{},
-		&ocispec.Platform{},
-		"mc",
-	)
-	if err != nil {
-		log.Fatalf("error %v", err)
-	}
-
-	if err := DockerClient.ContainerStart(context.TODO(), c.ID, types.ContainerStartOptions{}); err != nil {
-		log.Fatalf("error %v", err)
-	}
-
-	McStopped := make(chan bool)
-	go func(ms chan bool, cid string) {
-		log.Printf("info waiting for server to stop")
-		for true {
-			ci, err := DockerClient.ContainerInspect(context.TODO(), cid)
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-			if !ci.State.Running {
-				break
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
-
-		log.Printf("info removing container")
-		if err := DockerClient.ContainerRemove(context.TODO(), cid, types.ContainerRemoveOptions{}); err != nil {
-			log.Fatalf("error %v", err)
-		}
-
-		ms <- true
-	}(McStopped, c.ID)
-
-	McStarted := make(chan bool)
-	go func(ms chan bool, cid string) {
-		for true { // todo monka
-			// log.Printf("info trying 2 ping server")
-			ec, err := DockerClient.ContainerExecCreate(context.TODO(), cid, types.ExecConfig{
-				AttachStderr: true,
-				AttachStdout: true,
-				Tty:          true,
-				Cmd:          []string{"rcon-cli", "msg @p echo"},
-			})
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-
-			// log.Printf("info exec start")
-			if err := DockerClient.ContainerExecStart(context.TODO(), ec.ID, types.ExecStartCheck{}); err != nil {
-				log.Fatalf("error %v", err)
-			}
-
-			// log.Printf("info exec running")
-			for true {
-				ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
-				if err != nil {
-					log.Fatalf("error %v", err)
-				}
-				if !ei.Running {
-					break
-				}
-				// todo sleep?
-			}
-
-			ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-			// log.Printf("info ping exit code: %d", ei.ExitCode)
-			if ei.ExitCode == 0 {
-				break
-			}
-			// todo remove sleeps?
-			time.Sleep(500 * time.Millisecond)
-		}
-
-		ms <- true
-	}(McStarted, c.ID)
-
-	<-McStarted
-
-	ec, err := DockerClient.ContainerExecCreate(context.TODO(), c.ID, types.ExecConfig{
-		AttachStderr: true,
-		AttachStdout: true,
-		Tty:          true,
-		Cmd:          []string{"rcon-cli", "stop"},
-	})
-	if err != nil {
-		log.Fatalf("error %v", err)
-	}
-
-	if err := DockerClient.ContainerExecStart(context.TODO(), ec.ID, types.ExecStartCheck{}); err != nil {
-		log.Fatalf("error %v", err)
-	}
-	for true { // todo monka
-		ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
-		if err != nil {
-			log.Fatalf("error %v", err)
-		}
-		if !ei.Running {
-			break
-		}
-	}
-
-	ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
-	if err != nil {
-		log.Fatalf("error %v", err)
-	}
-	log.Println(ei.ExitCode)
-
-	<-McStopped
-
-	return
-	//
 
 	var JobsInProgress = make(chan struct{}, *flagThreads)
 	var JobsDone = make(chan struct{}, *flagJobs)
@@ -315,20 +79,20 @@ func main() {
 			q1 <- GodSeed{
 				Seed: outCubiomesArr[0],
 				Spawn: Coords{
-					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
-					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
+					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
+					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
 				},
 				Shipwreck: Coords{
-					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
-					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
+					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
+					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
 				},
 				Bastion: Coords{
-					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
-					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
+					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
+					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
 				},
 				Fortress: Coords{
-					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
-					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
+					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
+					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
 				},
 			}
 			<-jip
@@ -376,99 +140,63 @@ Phaze2:
 			goto SkipDocker
 		}
 		{
-			tmplComposeMc, err := template.
-				New("compose-mc.yml").
-				ParseFS(fsTemplate, "template/compose-mc.yml")
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-			err = os.MkdirAll("./tmp/mc", os.ModePerm) // todo use exec?
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-			fileComposeMc, err := os.Create("./tmp/mc/docker-compose.yml")
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-			err = tmplComposeMc.Execute(fileComposeMc, map[string]interface{}{
-				"ServiceName": "mc",
-				"Seed":        job.Seed,
-			})
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-			err = fileComposeMc.Close()
-			if err != nil {
+			log.Printf("info deleting previous world folder")
+			cmdRmRfWorld := exec.Command("rm", "-rf",
+				fmt.Sprintf("%s/tmp/mc/data/world", MustString(os.Getwd())),
+			)
+			if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
+				log.Printf("error delete world output: %s", string(outRmRfWorld))
 				log.Fatalf("error %v", err)
 			}
 
-			shutDown := make(chan bool)
-			go func(sd chan bool) {
-				log.Printf("info deleting previous world folder")
-				cmdRmRfWorld := exec.Command("rm", "-rf", "./tmp/mc/data/world")
-				if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
-					log.Printf("error delete world output: %s", string(outRmRfWorld))
-					log.Fatalf("error %v", err)
-				}
-				log.Printf("info starting minecraft server")
-				cmdComposeMc := exec.Command("docker-compose", "-f", "./tmp/mc/docker-compose.yml", "up")
-				if outComposeMc, err := cmdComposeMc.Output(); err != nil {
-					log.Printf("error docker-compose output: %s", string(outComposeMc))
-					log.Fatalf("error %v", err)
-				}
-				sd <- true
-			}(shutDown)
-
-			// wait for server to start
-			// todo use goroutine
-			// todo infinite loop has been observed on server not starting
-			for {
-				cmdEchoMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "\"msg @p echo\"")
-				if _, err := cmdEchoMc.Output(); err != nil {
-					time.Sleep(500 * time.Millisecond)
-					continue
-				}
-				break
+			mc, _ := ContainerCreateMc(job.Seed)
+			if err := DockerClient.ContainerStart(context.TODO(), mc.ID, types.ContainerStartOptions{}); err != nil {
+				log.Fatalf("error %v", err)
 			}
+
+			McStopped := make(chan bool)
+			go AwaitMcStopped(McStopped, mc.ID)
+
+			McStarted := make(chan bool)
+			go AwaitMcStarted(McStarted, mc.ID)
+
+			log.Printf("info waiting for minecraft server to start")
+			<-McStarted
 
 			// forceload chunks
 			//overworld
-			cmdForceload := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli",
+			if ec, err := McExec(mc.ID, []string{"rcon-cli",
 				fmt.Sprintf(
 					"forceload add %d %d %d %d",
 					ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2,
 				),
-			)
-			outForceload, err := cmdForceload.Output()
-			log.Printf("info rcon forceload overworld chunks: %s", string(outForceload))
-			if err != nil {
+			}); err != nil {
 				log.Fatalf("error %v", err)
+			} else {
+				log.Printf("info rcon forceload overworld chunks: %d", ec)
 			}
-			// nether
+
 			for _, v := range job.NetherChunksToBastion() {
-				cmdForceload := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli",
+				if ec, err := McExec(mc.ID, []string{"rcon-cli",
 					fmt.Sprintf(
 						"execute in minecraft:the_nether run forceload add %d %d %d %d",
 						v.X*16, v.Z*16, (v.X*16)+15, (v.Z*16)+15,
 					),
-				)
-				outForceload, err := cmdForceload.Output()
-				log.Printf("info rcon forceload nether chunks: %s", string(outForceload))
-				if err != nil {
+				}); err != nil {
 					log.Fatalf("error %v", err)
+				} else {
+					log.Printf("info rcon forceload nether chunks: %d", ec)
 				}
 			}
 
 			// stop server
-			cmdStopMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "stop")
-			outStopMc, err := cmdStopMc.Output()
-			log.Printf("info rcon stop command output: %s", string(outStopMc))
-			if err != nil {
+			if ec, err := McExec(mc.ID, []string{"rcon-cli", "stop"}); err != nil {
 				log.Fatalf("error %v", err)
+			} else {
+				log.Printf("info rcon stop: %d", ec)
 			}
 
-			log.Printf("info waiting for minecraft server to shut down")
-			<-shutDown
+			<-McStopped
 		}
 	SkipDocker:
 
@@ -477,13 +205,6 @@ Phaze2:
 		shipwreckAreaX1, shipwreckAreaZ1, shipwreckAreaX2, shipwreckAreaZ2 := job.ShipwreckArea()
 		magmaRavineChunks := []Coords{}
 		shipwrecksWithIron := []string{}
-
-		// todo BAD BAAD BAD
-		// todo BAD BAAD BAD
-		// todo BAD BAAD BAD
-		if 1 != 1 {
-			goto SkipCheckOverworld
-		}
 		for quadrant := 0; quadrant < 4; quadrant++ {
 			// todo swap x/z
 			regionX := (quadrant % 2) - 1
@@ -538,8 +259,8 @@ Phaze2:
 
 		OpenRegion:
 			region, err := region.Open(fmt.Sprintf(
-				"./tmp/mc/data/world/region/r.%d.%d.mca",
-				regionX, regionZ,
+				"%s/tmp/mc/data/world/region/r.%d.%d.mca",
+				MustString(os.Getwd()), regionX, regionZ,
 			))
 			if err != nil {
 				log.Fatalf("error %v", err)
@@ -552,7 +273,7 @@ Phaze2:
 					// 	log.Fatal("sector no existo")
 					// }
 
-					data, err := region.ReadSector(toSector(xC), toSector(zC))
+					data, err := region.ReadSector(ToSector(xC), ToSector(zC))
 					if err != nil {
 						log.Fatalf("error %v", err)
 					}
@@ -631,7 +352,7 @@ Phaze2:
 
 			for xC := x1 / 16; xC < (x2+1)/16; xC++ {
 				for zC := z1 / 16; zC < (z2+1)/16; zC++ {
-					data, err := region.ReadSector(toSector(xC), toSector(zC))
+					data, err := region.ReadSector(ToSector(xC), ToSector(zC))
 					if err != nil {
 						log.Fatalf("error %v", err)
 					}
@@ -668,16 +389,14 @@ Phaze2:
 			// todo use defer?
 			region.Close()
 		}
-	SkipCheckOverworld:
 
 		// nether checks
 		// todo ckeck for lava lake
 		netherChunkCoords := job.NetherChunksToBastion()
 
 		region, err := region.Open(fmt.Sprintf(
-			"./tmp/mc/data/world/DIM-1/region/r.%d.%d.mca",
-			netherChunkCoords[0].X,
-			netherChunkCoords[0].Z,
+			"%s/tmp/mc/data/world/DIM-1/region/r.%d.%d.mca",
+			MustString(os.Getwd()), netherChunkCoords[0].X, netherChunkCoords[0].Z,
 		))
 		if err != nil {
 			log.Fatalf("error %v", err)
@@ -687,8 +406,8 @@ Phaze2:
 		percentageOfAirAvg := 0
 		for _, v := range netherChunkCoords {
 			// log.Printf("info chunk %d %d", (v.X), (v.Z))
-			// log.Printf("info sector %d %d", toSector(v.X), toSector(v.Z))
-			data, err := region.ReadSector(toSector(v.X), toSector(v.Z))
+			// log.Printf("info sector %d %d", ToSector(v.X), ToSector(v.Z))
+			data, err := region.ReadSector(ToSector(v.X), ToSector(v.Z))
 			if err != nil {
 				log.Fatalf("error %v", err)
 			}
