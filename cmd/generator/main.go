@@ -159,9 +159,6 @@ Phaze2:
 				log.Fatalf("error %v", err)
 			}
 
-			McStopped := make(chan error)
-			go AwaitMcStopped(McStopped, mc.ID)
-
 			McStarted := make(chan error)
 			go AwaitMcStarted(McStarted, mc.ID)
 
@@ -169,6 +166,9 @@ Phaze2:
 			if err := <-McStarted; err != nil {
 				log.Fatalf("error %v", err)
 			}
+
+			McStopped := make(chan error)
+			go AwaitMcStopped(McStopped, mc.ID)
 
 			// forceload chunks
 			//overworld
