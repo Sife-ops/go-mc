@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -30,6 +31,8 @@ type GodSeed struct {
 	Seed      string // todo mb use int?
 	Spawn     Coords
 	Shipwreck Coords
+	Bastion   Coords
+	Fortress  Coords
 }
 
 func (g *GodSeed) RavineArea() (int, int, int, int) {
@@ -44,6 +47,33 @@ func (g *GodSeed) ShipwreckArea() (int, int, int, int) {
 		g.Shipwreck.Z - 16,
 		g.Shipwreck.X + 31,
 		g.Shipwreck.Z + 31
+}
+
+func (g *GodSeed) NetherChunksToBastion() (netherChunks2Load []Coords) {
+	bz, bx := g.Bastion.Z+8, g.Bastion.X+8
+	// log.Printf("info bastion chunk center coords %d,%d", bx, bz)
+	s := float64(bz) / float64(bx)
+	// log.Printf("info bastion slope %f", s)
+	bxa := math.Abs(float64(bx))
+
+	for i := 1; i < int(bxa); i++ {
+		x := i
+		if bx < 0 {
+			x = i * -1
+		}
+
+		a, b := int(math.Floor(float64(x)/16)), int(math.Floor(float64(x)*s/16))
+		hasChunk := false
+		for _, v := range netherChunks2Load {
+			if v.X == a && v.Z == b {
+				hasChunk = true
+			}
+		}
+		if hasChunk == false {
+			netherChunks2Load = append(netherChunks2Load, Coords{a, b})
+		}
+	}
+	return
 }
 
 func mustInt(i int, err error) int {
@@ -69,7 +99,7 @@ func toSector(i int) int {
 
 // todo move to flags
 var UseCubiomes = true    // generate a random seed
-var UseDocker = true      // write cubiomes output to file
+var UseDocker = true      // generate world files
 var RavineProximity = 112 // radius
 var RavineOffsetNegative = RavineProximity
 var RavineOffsetPositive = RavineProximity + 15
@@ -135,6 +165,14 @@ func main() {
 					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
 					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
 				},
+				Bastion: Coords{
+					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
+					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
+				},
+				Fortress: Coords{
+					X: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
+					Z: mustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
+				},
 			}
 			<-jip
 			jd <- struct{}{}
@@ -147,14 +185,23 @@ func main() {
 SetSeed:
 	// vvv DEBUG SEED vvv
 	Queue1 <- GodSeed{
-		Seed: "-6916114155717537644",
+		// Seed: "-6916114155717537644",
+		Seed: "-448396564840034738",
 		Spawn: Coords{
-			X: 0,
-			Z: 16,
+			X: -112,
+			Z: -112,
 		},
 		Shipwreck: Coords{
-			X: 16,
-			Z: 64,
+			X: -80,
+			Z: -96,
+		},
+		Bastion: Coords{
+			X: 96,
+			Z: -16,
+		},
+		Fortress: Coords{
+			X: -112,
+			Z: -96,
 		},
 	}
 	close(JobsInProgress)
@@ -217,6 +264,7 @@ Phaze2:
 
 			// wait for server to start
 			// todo use goroutine
+			// todo infinite loop has been observed on server not starting
 			for {
 				cmdEchoMc := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli", "\"msg @p echo\"")
 				if _, err := cmdEchoMc.Output(); err != nil {
@@ -227,13 +275,31 @@ Phaze2:
 			}
 
 			// forceload chunks
+			//overworld
 			cmdForceload := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli",
-				fmt.Sprintf("forceload add %d %d %d %d", ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2),
+				fmt.Sprintf(
+					"forceload add %d %d %d %d",
+					ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2,
+				),
 			)
 			outForceload, err := cmdForceload.Output()
-			log.Printf("info rcon forceload command output: %s", string(outForceload))
+			log.Printf("info rcon forceload overworld chunks: %s", string(outForceload))
 			if err != nil {
 				log.Fatalf("error %v", err)
+			}
+			// nether
+			for _, v := range job.NetherChunksToBastion() {
+				cmdForceload := exec.Command("docker", "exec", "mc-mc-1", "rcon-cli",
+					fmt.Sprintf(
+						"execute in minecraft:the_nether run forceload add %d %d %d %d",
+						v.X*16, v.Z*16, (v.X*16)+15, (v.Z*16)+15,
+					),
+				)
+				outForceload, err := cmdForceload.Output()
+				log.Printf("info rcon forceload nether chunks: %s", string(outForceload))
+				if err != nil {
+					log.Fatalf("error %v", err)
+				}
 			}
 
 			// stop server
@@ -249,10 +315,18 @@ Phaze2:
 		}
 	SkipDocker:
 
+		// overworld checks
 		// this part is RLLY bad
 		shipwreckAreaX1, shipwreckAreaZ1, shipwreckAreaX2, shipwreckAreaZ2 := job.ShipwreckArea()
 		magmaRavineChunks := []Coords{}
 		shipwrecksWithIron := []string{}
+
+		// todo BAD BAAD BAD
+		// todo BAD BAAD BAD
+		// todo BAD BAAD BAD
+		if 1 != 1 {
+			goto SkipCheckOverworld
+		}
 		for quadrant := 0; quadrant < 4; quadrant++ {
 			// todo swap x/z
 			regionX := (quadrant % 2) - 1
@@ -438,6 +512,64 @@ Phaze2:
 		CloseRegion:
 			region.Close()
 		}
+	SkipCheckOverworld:
+
+		// nether checks
+		// todo ckeck for lava lake
+		netherChunkCoords := job.NetherChunksToBastion()
+
+		region, err := region.Open(fmt.Sprintf(
+			"./tmp/mc/data/world/DIM-1/region/r.%d.%d.mca",
+			netherChunkCoords[0].X,
+			netherChunkCoords[0].Z,
+		))
+		if err != nil {
+			log.Fatalf("error %v", err)
+		}
+
+		percentageOfAir := []int{}
+		percentageOfAirAvg := 0
+		for _, v := range netherChunkCoords {
+			// log.Printf("info chunk %d %d", (v.X), (v.Z))
+			// log.Printf("info sector %d %d", toSector(v.X), toSector(v.Z))
+			data, err := region.ReadSector(toSector(v.X), toSector(v.Z))
+			if err != nil {
+				log.Fatalf("error %v", err)
+			}
+
+			var chunkSave save.Chunk
+			err = chunkSave.Load(data)
+			if err != nil {
+				log.Fatalf("error %v", err)
+			}
+
+			chunkLevel, err := level.ChunkFromSave(&chunkSave)
+			if err != nil {
+				log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
+				// goto NextQueueItem
+				continue Phaze2
+			}
+
+			airBlocks := 0
+			for i := 1; i < 9; i++ {
+				for j := 0; j < 16*16*16; j++ {
+					x := chunkLevel.GetBlockID(i, j)
+					if x == "minecraft:air" {
+						airBlocks++
+					}
+				}
+			}
+
+			pc := int((float64(airBlocks) * 100) / 32768)
+			percentageOfAir = append(percentageOfAir, pc)
+			percentageOfAirAvg += pc
+		}
+
+		log.Printf("info pc.s of air toward bastion: %v", percentageOfAir)
+		if len(percentageOfAir) > 0 {
+			percentageOfAirAvg = percentageOfAirAvg / len(percentageOfAir)
+			log.Printf("info avg. pc. of air toward bastion: %d", percentageOfAirAvg)
+		}
 
 		log.Printf("info *+*+*+*+*+*+*+*+*+*+")
 		log.Printf("info > seed: %s", job.Seed)
@@ -446,8 +578,8 @@ Phaze2:
 		log.Printf("info saving seed")
 
 		if _, err := db.Db.Exec(
-			"INSERT INTO seed (seed, ravine_chunks, iron_shipwrecks) VALUES ($1, $2, $3)",
-			job.Seed, len(magmaRavineChunks), len(shipwrecksWithIron),
+			"INSERT INTO seed (seed, ravine_chunks, iron_shipwrecks, avg_bastion_air) VALUES ($1, $2, $3, $4)",
+			job.Seed, len(magmaRavineChunks), len(shipwrecksWithIron), percentageOfAirAvg,
 		); err != nil {
 			log.Fatalf("error %v", err)
 		}

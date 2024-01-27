@@ -16,6 +16,7 @@ type Seed struct {
 	RavineChunks   int    `db:"ravine_chunks"`
 	IronShipwrecks int    `db:"iron_shipwrecks"`
 	Played         int    `db:"played"`
+	AvgBastionAir  *int   `db:"abg_bastion_air"`
 	Rating         *int   `db:"rating"`
 	Notes          *int   `db:"notes"`
 	Timestamp      string `db:"timestamp"`

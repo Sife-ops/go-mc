@@ -138,7 +138,9 @@ func readStatesPalette(palette []save.BlockState, data []uint64) (paletteData *P
 	for i, v := range palette {
 		b, ok := block.FromID[v.Name]
 		if !ok {
-			return nil, fmt.Errorf("unknown block id: %v", v.Name)
+			// return nil, fmt.Errorf("unknown block id: %v", v.Name)
+			fmt.Printf("warning would have crashed: %v", v.Name)
+			b = block.FromID["minecraft:air"]
 		}
 		if v.Properties.Data != nil {
 			if err := v.Properties.Unmarshal(&b); err != nil {
