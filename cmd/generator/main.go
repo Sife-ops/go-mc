@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
@@ -13,10 +14,15 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/Tnze/go-mc/cmd/generator/db"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/network"
+
 	"github.com/Tnze/go-mc/level"
 	"github.com/Tnze/go-mc/save"
 	"github.com/Tnze/go-mc/save/region"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 //go:embed template
@@ -83,6 +89,13 @@ func mustInt(i int, err error) int {
 	return i
 }
 
+func mustString(i string, err error) string {
+	if err != nil {
+		panic(err)
+	}
+	return i
+}
+
 func toRegion(i int) int {
 	if i < 0 {
 		return -1
@@ -111,6 +124,150 @@ func main() {
 	flagThreads := flag.Int("t", 2, "threads")
 	flagJobs := flag.Int("j", 2, "jobs")
 	flag.Parse()
+
+	//
+
+	c, err := DockerClient.ContainerCreate(
+		context.TODO(),
+		&container.Config{
+			Image:     "itzg/minecraft-server",
+			Tty:       true,
+			OpenStdin: true,
+			Env: []string{
+				"EULA=true",
+				"VERSION=1.16.1",
+				"SEED=123",
+				"MEMORY=2G",
+			},
+			// todo remove volumes?
+			Volumes: map[string]struct{}{
+				"./tmp/mc/data:/data": {},
+			},
+		},
+		&container.HostConfig{
+			Mounts: []mount.Mount{
+				{
+					Type:   mount.TypeBind,
+					Source: fmt.Sprintf("%s/tmp/mc/data", mustString(os.Getwd())),
+					Target: "/data",
+				},
+			},
+		},
+		&network.NetworkingConfig{},
+		&ocispec.Platform{},
+		"mc",
+	)
+	if err != nil {
+		log.Fatalf("error %v", err)
+	}
+
+	if err := DockerClient.ContainerStart(context.TODO(), c.ID, types.ContainerStartOptions{}); err != nil {
+		log.Fatalf("error %v", err)
+	}
+
+	McStopped := make(chan bool)
+	go func(ms chan bool, cid string) {
+		log.Printf("info waiting for server to stop")
+		for true {
+			ci, err := DockerClient.ContainerInspect(context.TODO(), cid)
+			if err != nil {
+				log.Fatalf("error %v", err)
+			}
+			if !ci.State.Running {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		log.Printf("info removing container")
+		if err := DockerClient.ContainerRemove(context.TODO(), cid, types.ContainerRemoveOptions{}); err != nil {
+			log.Fatalf("error %v", err)
+		}
+
+		ms <- true
+	}(McStopped, c.ID)
+
+	McStarted := make(chan bool)
+	go func(ms chan bool, cid string) {
+		for true { // todo monka
+			// log.Printf("info trying 2 ping server")
+			ec, err := DockerClient.ContainerExecCreate(context.TODO(), cid, types.ExecConfig{
+				AttachStderr: true,
+				AttachStdout: true,
+				Tty:          true,
+				Cmd:          []string{"rcon-cli", "msg @p echo"},
+			})
+			if err != nil {
+				log.Fatalf("error %v", err)
+			}
+
+			// log.Printf("info exec start")
+			if err := DockerClient.ContainerExecStart(context.TODO(), ec.ID, types.ExecStartCheck{}); err != nil {
+				log.Fatalf("error %v", err)
+			}
+
+			// log.Printf("info exec running")
+			for true {
+				ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
+				if err != nil {
+					log.Fatalf("error %v", err)
+				}
+				if !ei.Running {
+					break
+				}
+				// todo sleep?
+			}
+
+			ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
+			if err != nil {
+				log.Fatalf("error %v", err)
+			}
+			// log.Printf("info ping exit code: %d", ei.ExitCode)
+			if ei.ExitCode == 0 {
+				break
+			}
+			// todo remove sleeps?
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		ms <- true
+	}(McStarted, c.ID)
+
+	<-McStarted
+
+	ec, err := DockerClient.ContainerExecCreate(context.TODO(), c.ID, types.ExecConfig{
+		AttachStderr: true,
+		AttachStdout: true,
+		Tty:          true,
+		Cmd:          []string{"rcon-cli", "stop"},
+	})
+	if err != nil {
+		log.Fatalf("error %v", err)
+	}
+
+	if err := DockerClient.ContainerExecStart(context.TODO(), ec.ID, types.ExecStartCheck{}); err != nil {
+		log.Fatalf("error %v", err)
+	}
+	for true { // todo monka
+		ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
+		if err != nil {
+			log.Fatalf("error %v", err)
+		}
+		if !ei.Running {
+			break
+		}
+	}
+
+	ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
+	if err != nil {
+		log.Fatalf("error %v", err)
+	}
+	log.Println(ei.ExitCode)
+
+	<-McStopped
+
+	return
+	//
 
 	var JobsInProgress = make(chan struct{}, *flagThreads)
 	var JobsDone = make(chan struct{}, *flagJobs)
@@ -382,8 +539,7 @@ Phaze2:
 		OpenRegion:
 			region, err := region.Open(fmt.Sprintf(
 				"./tmp/mc/data/world/region/r.%d.%d.mca",
-				regionX,
-				regionZ,
+				regionX, regionZ,
 			))
 			if err != nil {
 				log.Fatalf("error %v", err)
@@ -410,7 +566,6 @@ Phaze2:
 					chunkLevel, err := level.ChunkFromSave(&chunkSave)
 					if err != nil {
 						log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
-						// goto NextQueueItem
 						continue Phaze2
 					}
 
@@ -510,6 +665,7 @@ Phaze2:
 			}
 
 		CloseRegion:
+			// todo use defer?
 			region.Close()
 		}
 	SkipCheckOverworld:
@@ -560,9 +716,9 @@ Phaze2:
 				}
 			}
 
-			pc := int((float64(airBlocks) * 100) / 32768)
-			percentageOfAir = append(percentageOfAir, pc)
-			percentageOfAirAvg += pc
+			percentageOfAirChunk := int((float64(airBlocks) * 100) / 32768)
+			percentageOfAir = append(percentageOfAir, percentageOfAirChunk)
+			percentageOfAirAvg += percentageOfAirChunk
 		}
 
 		log.Printf("info pc.s of air toward bastion: %v", percentageOfAir)
@@ -577,7 +733,7 @@ Phaze2:
 		log.Printf("info > shipwrecks with iron: %d (%v)", len(shipwrecksWithIron), shipwrecksWithIron)
 		log.Printf("info saving seed")
 
-		if _, err := db.Db.Exec(
+		if _, err := Db.Exec(
 			"INSERT INTO seed (seed, ravine_chunks, iron_shipwrecks, avg_bastion_air) VALUES ($1, $2, $3, $4)",
 			job.Seed, len(magmaRavineChunks), len(shipwrecksWithIron), percentageOfAirAvg,
 		); err != nil {
