@@ -7,7 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
+
+	// "time"
 
 	"github.com/docker/docker/api/types"
 
@@ -19,12 +20,10 @@ import (
 func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDone chan struct{}, worldgenDilating chan GodSeed) {
 	job := <-cubiomesOut
 
-	time.Sleep(5 * time.Second)
-	log.Printf("simulating something bad")
-	worldgenDilating <- job
-	return
-
-	// _, cancel := context.WithTimeout()
+	// time.Sleep(5 * time.Second)
+	// log.Printf("simulating something bad")
+	// worldgenDilating <- job
+	// return
 
 	log.Printf("info killing old container")
 	if err := KillMcContainer(); err != nil {
@@ -391,9 +390,6 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		percentageOfAirAvg += percentageOfAirChunk
 	}
 
-	// 	goto GenerateRegionsSuccess
-	// GenerateRegionsSuccess:
-
 	log.Println()
 	log.Printf("info *+*+*+*+* GENERATED GOD SEED *+*+*+*+*")
 	log.Printf("info > seed: %s", job.Seed)
@@ -409,16 +405,17 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 
 	log.Printf("info saving seed")
 
+	// todo do update here, create record in the cubiomes stage
 	if _, err := Db.Exec(
-		"INSERT INTO seed (seed, ravine_chunks, iron_shipwrecks, avg_bastion_air) VALUES ($1, $2, $3, $4)",
-		job.Seed, len(magmaRavineChunks), len(shipwrecksWithIron), percentageOfAirAvg,
+		`UPDATE seed SET ravine_chunks=$1, iron_shipwrecks=$2, avg_bastion_air=$3, finished_worldgen=1 WHERE seed=$4`,
+		len(magmaRavineChunks), len(shipwrecksWithIron), percentageOfAirAvg, job.Seed,
 	); err != nil {
 		log.Printf("error %v", err)
 		worldgenDilating <- job
 		return
 	}
 
-	log.Printf("info finished worldgen job %d", len(worldgenDone))
 	worldgenDone <- struct{}{}
+	log.Printf("info finished worldgen job %d", len(worldgenDone))
 	<-worldgenInProg
 }

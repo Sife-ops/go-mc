@@ -2,12 +2,10 @@ package level
 
 import (
 	"bytes"
-	// "errors"
 	"fmt"
 	"io"
+	"log"
 	"math/bits"
-
-	// "strconv"
 	"strings"
 
 	"github.com/Tnze/go-mc/level/biome"
@@ -138,12 +136,10 @@ func readStatesPalette(palette []save.BlockState, data []uint64) (paletteData *P
 	for i, v := range palette {
 		b, ok := block.FromID[v.Name]
 		if !ok {
-			// todo FIX GRASS_PATH
-			// todo FIX GRASS_PATH
-			// todo FIX GRASS_PATH
+			// todo THIS IS STILL A BIG PROBLEM
 			// return nil, fmt.Errorf("unknown block id: %v", v.Name)
-			fmt.Printf("warning would have crashed: %s", v.Name)
 			b = block.FromID["minecraft:air"]
+			log.Printf("warning unknown block %s was replaced with air", v.Name)
 		}
 		if v.Properties.Data != nil {
 			if err := v.Properties.Unmarshal(&b); err != nil {
@@ -152,7 +148,10 @@ func readStatesPalette(palette []save.BlockState, data []uint64) (paletteData *P
 		}
 		s, ok := block.ToStateID[b]
 		if !ok {
-			return nil, fmt.Errorf("unknown block: %v", b)
+			// todo THIS IS STILL A BIG PROBLEM
+			// return nil, fmt.Errorf("unknown block: %v", b)
+			s = block.ToStateID[block.FromID["minecraft:air"]]
+			log.Printf("warning unknown block %s was replaced with air", v.Name)
 		}
 		statePalette[i] = s
 	}

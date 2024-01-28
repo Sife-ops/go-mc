@@ -8,5 +8,18 @@ CREATE TABLE seed (
     played INTEGER DEFAULT 0 NOT NULL,
     rating INTEGER,
     notes TEXT,
+
+	spawn_x INTEGER,
+	spawn_z INTEGER,
+	bastion_x INTEGER,
+	bastion_z INTEGER,
+	shipwreck_x INTEGER,
+	shipwreck_z INTEGER,
+	fortress_x INTEGER,
+	fortress_z INTEGER,
+
+    finished_cubiomes INTEGER,
+    finished_worldgen INTEGER,
+
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
