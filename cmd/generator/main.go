@@ -27,85 +27,95 @@ var RavineOffsetPositive = RavineProximity + 15
 
 // todo html
 // todo get rid of some fatals
-// todo docker service api 4 golang?
+// todo more context timeout
 func main() {
 	flagThreads := flag.Int("t", 2, "threads")
 	flagJobs := flag.Int("j", 2, "jobs")
 	flag.Parse()
 
-	var JobsInProgress = make(chan struct{}, *flagThreads)
-	var JobsDone = make(chan struct{}, *flagJobs)
-	var Queue1 = make(chan GodSeed, *flagJobs)
+	var CubiomesOut = make(chan GodSeed, *flagJobs)
+	var CubiomesInProg = make(chan struct{}, *flagThreads)
+	defer close(CubiomesInProg)
+	var CubiomesDone = make(chan struct{}, *flagJobs)
+	defer close(CubiomesDone)
 
 	if !UseCubiomes {
 		log.Printf("info using set seed")
 		goto SetSeed
 	}
 
-	go func(jip chan struct{}, jd chan struct{}, q1 chan GodSeed) {
-		for len(jd) < *flagJobs {
-			// log.Printf("info %d cubiomes instances running", len(jip))
-			// log.Printf("info %d cubiomes jobs done", len(jd))
-			// log.Printf("info %d items in q1", len(q1))
-			time.Sleep(1 * time.Second)
-		}
-		log.Printf("info ==&==&==&==&==&==&==")
-		log.Printf("info shutting down channels")
-		close(jip)
-		close(jd)
-		close(q1)
-	}(JobsInProgress, JobsDone, Queue1)
+	go func() {
+		for {
+			<-time.After(100 * time.Millisecond)
 
-	for t := 0; t < *flagJobs; t++ {
-		go func(jip chan struct{}, jd chan struct{}, q1 chan GodSeed) {
-		Wait:
-			for len(jip) >= *flagThreads {
-				time.Sleep(660 * time.Millisecond)
+			if len(CubiomesDone) >= *flagJobs {
+				return
 			}
-			if len(jip) < *flagThreads {
-				jip <- struct{}{}
+			todo := *flagJobs - len(CubiomesDone)
+			if todo >= *flagThreads {
+				if len(CubiomesInProg) >= *flagThreads {
+					continue
+				}
 			} else {
-				goto Wait
+				if len(CubiomesInProg) >= todo {
+					continue
+				}
 			}
 
-			cmdCubiomes := exec.Command("./a.out")
-			outCubiomes, err := cmdCubiomes.Output()
-			if err != nil {
-				log.Fatalf("error %v", err)
-			}
-			log.Printf("info cubiomes output: %s", string(outCubiomes))
+			CubiomesInProg <- struct{}{}
+			go func() {
+				log.Println("info starting new cubiomes thread")
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				cmdCubiomes := exec.CommandContext(ctx, "./a.out")
+				outCubiomes, err := cmdCubiomes.Output()
+				outCubiomesArr := strings.Split(string(outCubiomes), ":")
+				if err != nil {
+					log.Printf("warning cubiomes job exited %v", err)
+					goto CubiomesExit
+				}
+				log.Printf("info cubiomes output: %s", string(outCubiomes))
 
-			outCubiomesArr := strings.Split(string(outCubiomes), ":")
-			q1 <- GodSeed{
-				Seed: outCubiomesArr[0],
-				Spawn: Coords{
-					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
-					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
-				},
-				Shipwreck: Coords{
-					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
-					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
-				},
-				Bastion: Coords{
-					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
-					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
-				},
-				Fortress: Coords{
-					X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
-					Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
-				},
-			}
-			<-jip
-			jd <- struct{}{}
-		}(JobsInProgress, JobsDone, Queue1)
-	}
+				CubiomesOut <- GodSeed{
+					Seed: outCubiomesArr[0],
+					Spawn: Coords{
+						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
+						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
+					},
+					Shipwreck: Coords{
+						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
+						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
+					},
+					Bastion: Coords{
+						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
+						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
+					},
+					Fortress: Coords{
+						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
+						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
+					},
+				}
+
+				CubiomesDone <- struct{}{}
+				log.Printf("info finished cubiomes job %d", len(CubiomesDone))
+				if len(CubiomesDone) >= *flagJobs {
+					log.Printf("info closing CubiomesOut")
+					close(CubiomesOut)
+				}
+
+			CubiomesExit:
+				log.Println("info freeing cubiomes thread")
+				cancel()
+				<-CubiomesInProg
+			}()
+		}
+	}()
 
 	log.Printf("info taking it 2 teh next lvl ^_-")
-	goto Phaze2
+	goto GenerateRegions
 
 SetSeed:
 	// vvv DEBUG SEED vvv
-	Queue1 <- GodSeed{
+	CubiomesOut <- GodSeed{
 		// Seed: "-6916114155717537644",
 		Seed: "-448396564840034738",
 		Spawn: Coords{
@@ -125,14 +135,14 @@ SetSeed:
 			Z: -96,
 		},
 	}
-	close(JobsInProgress)
-	close(JobsDone)
-	close(Queue1)
+	close(CubiomesDone)
+	close(CubiomesInProg)
+	close(CubiomesOut)
 	// ^^^ DEBUG SEED ^^^
 
-Phaze2:
+GenerateRegions:
 	for iJob := 0; iJob < *flagJobs; iJob++ {
-		job := <-Queue1
+		job := <-CubiomesOut
 
 		ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2 := job.RavineArea()
 		if !UseDocker {
@@ -140,6 +150,13 @@ Phaze2:
 			goto SkipDocker
 		}
 		{
+			log.Printf("info killing old container")
+			if err := KillMcContainer(); err != nil {
+				if !strings.Contains(err.Error(), "is not running") {
+					log.Fatalf("error %v", err)
+				}
+			}
+
 			log.Printf("info removing old container")
 			if err := RemoveMcContainer(); err != nil {
 				log.Fatalf("error %v", err)
@@ -150,13 +167,13 @@ Phaze2:
 				fmt.Sprintf("%s/tmp/mc/data/world", MustString(os.Getwd())),
 			)
 			if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
-				log.Printf("error delete world output: %s", string(outRmRfWorld))
-				log.Fatalf("error %v", err)
+				log.Fatalf("error deleting world folder: %s %v", string(outRmRfWorld), err)
 			}
 
+			log.Printf("info starting minecraft server container")
 			mc, _ := ContainerCreateMc(job.Seed)
 			if err := DockerClient.ContainerStart(context.TODO(), mc.ID, types.ContainerStartOptions{}); err != nil {
-				log.Fatalf("error %v", err)
+				log.Fatalf("error starting minecraft server container: %v", err)
 			}
 
 			McStarted := make(chan error)
@@ -164,43 +181,54 @@ Phaze2:
 
 			log.Printf("info waiting for minecraft server to start")
 			if err := <-McStarted; err != nil {
-				log.Fatalf("error %v", err)
+				log.Fatalf("error waiting for minecraft server to start: %v", err)
 			}
 
 			McStopped := make(chan error)
 			go AwaitMcStopped(McStopped, mc.ID)
 
 			// forceload chunks
-			//overworld
+			// nether
 			if ec, err := McExec(mc.ID, []string{"rcon-cli",
 				fmt.Sprintf(
 					"forceload add %d %d %d %d",
 					ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2,
 				),
-			}); err != nil {
-				log.Fatalf("error %v", err)
+			}); ec != 0 && err != nil {
+				log.Fatalf(
+					"error rcon forceloading overworld area %d %d %d %d failed: %v",
+					ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2, err,
+				)
 			} else {
-				log.Printf("info rcon forceload overworld chunks: %d", ec)
+				log.Printf(
+					"info rcon forceloaded overworld area %d %d %d %d",
+					ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2,
+				)
 			}
 
+			// nether
+			forceloadedNetherChunks := []Coords{}
 			for _, v := range job.NetherChunksToBastion() {
+				forceloadedNetherChunks = append(forceloadedNetherChunks, Coords{v.X, v.Z})
 				if ec, err := McExec(mc.ID, []string{"rcon-cli",
 					fmt.Sprintf(
 						"execute in minecraft:the_nether run forceload add %d %d %d %d",
 						v.X*16, v.Z*16, (v.X*16)+15, (v.Z*16)+15,
 					),
-				}); err != nil {
-					log.Fatalf("error %v", err)
-				} else {
-					log.Printf("info rcon forceload nether chunks: %d", ec)
+				}); ec != 0 && err != nil {
+					log.Fatalf(
+						"error rcon forceloading nether chunk %d %d failed: %v",
+						err, v.X, v.Z,
+					)
 				}
 			}
+			log.Printf("info rcon forceloaded nether chunks: %v", forceloadedNetherChunks)
 
 			// stop server
-			if ec, err := McExec(mc.ID, []string{"rcon-cli", "stop"}); err != nil {
-				log.Fatalf("error %v", err)
+			if ec, err := McExec(mc.ID, []string{"rcon-cli", "stop"}); ec != 0 && err != nil {
+				log.Fatalf("error rcon stopping server: %v", err)
 			} else {
-				log.Printf("info rcon stop: %d", ec)
+				log.Printf("info rcon stopped server")
 			}
 
 			log.Printf("info waiting for minecraft server to stop")
@@ -273,7 +301,10 @@ Phaze2:
 				MustString(os.Getwd()), regionX, regionZ,
 			))
 			if err != nil {
-				log.Fatalf("error %v", err)
+				// log.Fatalf("error %v", err)
+				log.Printf("warning skipping this seed: %v", err)
+				log.Printf("%v", job)
+				continue GenerateRegions
 			}
 
 			for xC := x1 / 16; xC < (x2+1)/16; xC++ {
@@ -298,7 +329,7 @@ Phaze2:
 					if err != nil {
 						log.Fatalf("error %v", err)
 						// log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
-						// continue Phaze2
+						// continue GenerateRegions
 					}
 
 					obby, magma, lava := 0, 0, 0
@@ -410,7 +441,10 @@ Phaze2:
 			MustString(os.Getwd()), netherChunkCoords[0].X, netherChunkCoords[0].Z,
 		))
 		if err != nil {
-			log.Fatalf("error %v", err)
+			// log.Fatalf("error %v", err)
+			log.Printf("warning skipping this seed: %v", err)
+			log.Printf("%v", job)
+			continue GenerateRegions
 		}
 
 		percentageOfAir := []int{}
@@ -432,8 +466,7 @@ Phaze2:
 			chunkLevel, err := level.ChunkFromSave(&chunkSave)
 			if err != nil {
 				log.Printf("warning skipping seed %s due to error: %v", job.Seed, err)
-				// goto NextQueueItem
-				continue Phaze2
+				continue GenerateRegions
 			}
 
 			airBlocks := 0
@@ -451,16 +484,22 @@ Phaze2:
 			percentageOfAirAvg += percentageOfAirChunk
 		}
 
-		log.Printf("info pc.s of air toward bastion: %v", percentageOfAir)
-		if len(percentageOfAir) > 0 {
-			percentageOfAirAvg = percentageOfAirAvg / len(percentageOfAir)
-			log.Printf("info avg. pc. of air toward bastion: %d", percentageOfAirAvg)
-		}
+		// 	goto GenerateRegionsSuccess
+		// GenerateRegionsSuccess:
 
-		log.Printf("info *+*+*+*+*+*+*+*+*+*+")
+		log.Println()
+		log.Printf("info *+*+*+*+* GENERATED GOD SEED *+*+*+*+*")
 		log.Printf("info > seed: %s", job.Seed)
 		log.Printf("info > magma ravine chunks: %d (%v)", len(magmaRavineChunks), magmaRavineChunks)
 		log.Printf("info > shipwrecks with iron: %d (%v)", len(shipwrecksWithIron), shipwrecksWithIron)
+		log.Printf("info > pc.s of air toward bastion: %v", percentageOfAir)
+		if len(percentageOfAir) > 0 {
+			percentageOfAirAvg = percentageOfAirAvg / len(percentageOfAir)
+			log.Printf("info > avg. pc. of air toward bastion: %d", percentageOfAirAvg)
+		}
+		log.Printf("info *+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+		log.Println()
+
 		log.Printf("info saving seed")
 
 		if _, err := Db.Exec(

@@ -27,6 +27,24 @@ func init() {
 	DockerClient = dockerClient
 }
 
+func KillMcContainer() error {
+	cl, err := DockerClient.ContainerList(context.TODO(), types.ContainerListOptions{
+		All: true,
+	})
+	if err != nil {
+		return err
+	}
+	for _, v := range cl {
+		if strings.Contains(v.Names[0], ContainerName) {
+			if err := DockerClient.ContainerKill(context.TODO(), v.ID, ""); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
+}
+
 func RemoveMcContainer() error {
 	cl, err := DockerClient.ContainerList(context.TODO(), types.ContainerListOptions{
 		All: true,
