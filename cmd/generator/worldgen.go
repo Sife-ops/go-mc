@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"strings"
 
-	// "time"
-
 	"github.com/docker/docker/api/types"
 
 	"github.com/Tnze/go-mc/level"
@@ -17,27 +15,25 @@ import (
 	"github.com/Tnze/go-mc/save/region"
 )
 
-func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDone chan struct{}, worldgenDilating chan GodSeed) {
-	job := <-cubiomesOut
+func Worldgen() {
+	job := <-CubiomesOut
 
-	// time.Sleep(5 * time.Second)
-	// log.Printf("simulating something bad")
-	// worldgenDilating <- job
-	// return
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	log.Printf("info killing old container")
-	if err := KillMcContainer(); err != nil {
+	if err := KillMcContainer(ctx); err != nil {
 		if !strings.Contains(err.Error(), "is not running") {
 			log.Printf("error %v", err)
-			worldgenDilating <- job
+			WorldgenDilating <- job
 			return
 		}
 	}
 
 	log.Printf("info removing old container")
-	if err := RemoveMcContainer(); err != nil {
+	if err := RemoveMcContainer(ctx); err != nil {
 		log.Printf("error %v", err)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	}
 
@@ -47,35 +43,35 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 	)
 	if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
 		log.Printf("error deleting world folder: %s %v", string(outRmRfWorld), err)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	}
 
 	log.Printf("info starting minecraft server container")
-	mc, _ := ContainerCreateMc(job.Seed)
+	mc, _ := ContainerCreateMc(ctx, job.Seed)
 	if err := DockerClient.ContainerStart(context.TODO(), mc.ID, types.ContainerStartOptions{}); err != nil {
 		log.Printf("error starting minecraft server container: %v", err)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	}
 
 	McStarted := make(chan error)
-	go AwaitMcStarted(McStarted, mc.ID)
+	go AwaitMcStarted(ctx, McStarted, mc.ID)
 
 	log.Printf("info waiting for minecraft server to start")
 	if err := <-McStarted; err != nil {
 		log.Printf("error waiting for minecraft server to start: %v", err)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	}
 
 	McStopped := make(chan error)
-	go AwaitMcStopped(McStopped, mc.ID)
+	go AwaitMcStopped(ctx, McStopped, mc.ID)
 
 	// forceload chunks
 	// nether
 	ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2 := job.RavineArea() // todo dont reuse later
-	if ec, err := McExec(mc.ID, []string{"rcon-cli",
+	if ec, err := McExec(ctx, mc.ID, []string{"rcon-cli",
 		fmt.Sprintf(
 			"forceload add %d %d %d %d",
 			ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2,
@@ -85,7 +81,7 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 			"error rcon forceloading overworld area %d %d %d %d failed: %v",
 			ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2, err,
 		)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	} else {
 		log.Printf(
@@ -98,7 +94,7 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 	forceloadedNetherChunks := []Coords{}
 	for _, v := range job.NetherChunksToBastion() {
 		forceloadedNetherChunks = append(forceloadedNetherChunks, Coords{v.X, v.Z})
-		if ec, err := McExec(mc.ID, []string{"rcon-cli",
+		if ec, err := McExec(ctx, mc.ID, []string{"rcon-cli",
 			fmt.Sprintf(
 				"execute in minecraft:the_nether run forceload add %d %d %d %d",
 				v.X*16, v.Z*16, (v.X*16)+15, (v.Z*16)+15,
@@ -108,16 +104,16 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 				"error rcon forceloading nether chunk %d %d failed: %v",
 				err, v.X, v.Z,
 			)
-			worldgenDilating <- job
+			WorldgenDilating <- job
 			return
 		}
 	}
 	log.Printf("info rcon forceloaded nether chunks: %v", forceloadedNetherChunks)
 
 	// stop server
-	if ec, err := McExec(mc.ID, []string{"rcon-cli", "stop"}); ec != 0 && err != nil {
+	if ec, err := McExec(ctx, mc.ID, []string{"rcon-cli", "stop"}); ec != 0 && err != nil {
 		log.Printf("error rcon stopping server: %v", err)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	} else {
 		log.Printf("info rcon stopped server")
@@ -126,7 +122,7 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 	log.Printf("info waiting for minecraft server to stop")
 	if err := <-McStopped; err != nil {
 		log.Printf("error %v", err)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	}
 
@@ -195,7 +191,7 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		if err != nil {
 			// todo printf job every time u dilate
 			log.Printf("error skipping job: %v due to error: %v", job, err)
-			worldgenDilating <- job
+			WorldgenDilating <- job
 			return
 		}
 
@@ -209,7 +205,7 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 				data, err := region.ReadSector(ToSector(xC), ToSector(zC))
 				if err != nil {
 					log.Printf("error %v", err)
-					worldgenDilating <- job
+					WorldgenDilating <- job
 					return
 				}
 
@@ -217,14 +213,14 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 				err = chunkSave.Load(data)
 				if err != nil {
 					log.Printf("error %v", err)
-					worldgenDilating <- job
+					WorldgenDilating <- job
 					return
 				}
 
 				chunkLevel, err := level.ChunkFromSave(&chunkSave)
 				if err != nil {
 					log.Printf("error %v", err)
-					worldgenDilating <- job
+					WorldgenDilating <- job
 					return
 				}
 
@@ -259,14 +255,14 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		z2 = shipwreckAreaZ2
 		if regionX < 0 {
 			if x1 >= 0 {
-				goto CloseRegion
+				region.Close()
 			}
 			if x2 >= 0 {
 				x2 = -1
 			}
 		} else {
 			if x2 < 0 {
-				goto CloseRegion
+				region.Close()
 			}
 			if x1 < 0 {
 				x1 = 0
@@ -274,14 +270,14 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		}
 		if regionZ < 0 {
 			if z1 >= 0 {
-				goto CloseRegion
+				region.Close()
 			}
 			if z2 >= 0 {
 				z2 = -1
 			}
 		} else {
 			if z2 < 0 {
-				goto CloseRegion
+				region.Close()
 			}
 			if z1 < 0 {
 				z1 = 0
@@ -293,14 +289,14 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 				data, err := region.ReadSector(ToSector(xC), ToSector(zC))
 				if err != nil {
 					log.Printf("error %v", err)
-					worldgenDilating <- job
+					WorldgenDilating <- job
 					return
 				}
 				var chunkSave save.Chunk
 				err = chunkSave.Load(data)
 				if err != nil {
 					log.Printf("error %v", err)
-					worldgenDilating <- job
+					WorldgenDilating <- job
 					return
 				}
 				if len(chunkSave.Level.Structures.Starts.Shipwreck.Children) < 1 {
@@ -326,10 +322,6 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 				}
 			}
 		}
-
-	CloseRegion:
-		// todo use defer?
-		region.Close()
 	}
 
 	// nether checks
@@ -344,7 +336,7 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		// log.Fatalf("error %v", err)
 		log.Printf("warning skipping this seed: %v", err)
 		log.Printf("%v", job)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	}
 
@@ -356,7 +348,7 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		data, err := region.ReadSector(ToSector(v.X), ToSector(v.Z))
 		if err != nil {
 			log.Printf("error %v", err)
-			worldgenDilating <- job
+			WorldgenDilating <- job
 			return
 		}
 
@@ -364,14 +356,14 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		err = chunkSave.Load(data)
 		if err != nil {
 			log.Printf("error %v", err)
-			worldgenDilating <- job
+			WorldgenDilating <- job
 			return
 		}
 
 		chunkLevel, err := level.ChunkFromSave(&chunkSave)
 		if err != nil {
 			log.Printf("error %v", err)
-			worldgenDilating <- job
+			WorldgenDilating <- job
 			return
 		}
 
@@ -411,11 +403,11 @@ func Worldgen(cubiomesOut chan GodSeed, worldgenInProg chan struct{}, worldgenDo
 		len(magmaRavineChunks), len(shipwrecksWithIron), percentageOfAirAvg, job.Seed,
 	); err != nil {
 		log.Printf("error %v", err)
-		worldgenDilating <- job
+		WorldgenDilating <- job
 		return
 	}
 
-	worldgenDone <- struct{}{}
-	log.Printf("info finished worldgen job %d", len(worldgenDone))
-	<-worldgenInProg
+	WorldgenDone <- struct{}{}
+	log.Printf("info finished worldgen job %d", len(WorldgenDone))
+	<-WorldgenInProg
 }

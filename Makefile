@@ -6,4 +6,5 @@ build:
 	cmd/generator/db.go \
 	cmd/generator/container.go \
 	cmd/generator/seed.go \
-	cmd/generator/worldgen.go
+	cmd/generator/worldgen.go \
+	cmd/generator/cubiomes.go

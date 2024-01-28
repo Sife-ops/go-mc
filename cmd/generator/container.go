@@ -27,8 +27,8 @@ func init() {
 	DockerClient = dockerClient
 }
 
-func KillMcContainer() error {
-	cl, err := DockerClient.ContainerList(context.TODO(), types.ContainerListOptions{
+func KillMcContainer(ctx context.Context) error {
+	cl, err := DockerClient.ContainerList(ctx, types.ContainerListOptions{
 		All: true,
 	})
 	if err != nil {
@@ -36,7 +36,7 @@ func KillMcContainer() error {
 	}
 	for _, v := range cl {
 		if strings.Contains(v.Names[0], ContainerName) {
-			if err := DockerClient.ContainerKill(context.TODO(), v.ID, ""); err != nil {
+			if err := DockerClient.ContainerKill(ctx, v.ID, ""); err != nil {
 				return err
 			}
 			break
@@ -45,8 +45,8 @@ func KillMcContainer() error {
 	return nil
 }
 
-func RemoveMcContainer() error {
-	cl, err := DockerClient.ContainerList(context.TODO(), types.ContainerListOptions{
+func RemoveMcContainer(ctx context.Context) error {
+	cl, err := DockerClient.ContainerList(ctx, types.ContainerListOptions{
 		All: true,
 	})
 	if err != nil {
@@ -54,7 +54,7 @@ func RemoveMcContainer() error {
 	}
 	for _, v := range cl {
 		if strings.Contains(v.Names[0], ContainerName) {
-			if err := DockerClient.ContainerRemove(context.TODO(), v.ID, types.ContainerRemoveOptions{}); err != nil {
+			if err := DockerClient.ContainerRemove(ctx, v.ID, types.ContainerRemoveOptions{}); err != nil {
 				return err
 			}
 			break
@@ -63,9 +63,9 @@ func RemoveMcContainer() error {
 	return nil
 }
 
-func ContainerCreateMc(seed string) (container.CreateResponse, error) {
+func ContainerCreateMc(ctx context.Context, seed string) (container.CreateResponse, error) {
 	return DockerClient.ContainerCreate(
-		context.TODO(),
+		ctx,
 		&container.Config{
 			Image:     "itzg/minecraft-server",
 			Tty:       true,
@@ -97,9 +97,9 @@ func ContainerCreateMc(seed string) (container.CreateResponse, error) {
 }
 
 // todo remove container at start
-func AwaitMcStopped(ms chan error, cid string) {
+func AwaitMcStopped(ctx context.Context, ms chan error, cid string) {
 	for true {
-		if ci, err := DockerClient.ContainerInspect(context.TODO(), cid); err != nil {
+		if ci, err := DockerClient.ContainerInspect(ctx, cid); err != nil {
 			ms <- err
 			return
 		} else if !ci.State.Running {
@@ -112,9 +112,9 @@ func AwaitMcStopped(ms chan error, cid string) {
 }
 
 // todo be able 2c rcon stdout???
-func AwaitMcStarted(ms chan error, cid string) {
+func AwaitMcStarted(ctx context.Context, ms chan error, cid string) {
 	for true {
-		if ec, err := McExec(cid, []string{"rcon-cli", "msg @p echo"}); err != nil {
+		if ec, err := McExec(ctx, cid, []string{"rcon-cli", "msg @p echo"}); err != nil {
 			ms <- err
 			return
 		} else if ec == 0 {
@@ -127,8 +127,8 @@ func AwaitMcStarted(ms chan error, cid string) {
 }
 
 // todo return IDResponse?
-func McExec(cid string, cmd []string) (int, error) {
-	ec, err := DockerClient.ContainerExecCreate(context.TODO(), cid, types.ExecConfig{
+func McExec(ctx context.Context, cid string, cmd []string) (int, error) {
+	ec, err := DockerClient.ContainerExecCreate(ctx, cid, types.ExecConfig{
 		AttachStderr: true,
 		AttachStdout: true,
 		Tty:          true,
@@ -138,13 +138,13 @@ func McExec(cid string, cmd []string) (int, error) {
 		return -1, err
 	}
 
-	if err := DockerClient.ContainerExecStart(context.TODO(), ec.ID, types.ExecStartCheck{}); err != nil {
+	if err := DockerClient.ContainerExecStart(ctx, ec.ID, types.ExecStartCheck{}); err != nil {
 		if err != nil {
 			return -1, err
 		}
 	}
 	for true { // todo monka
-		ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
+		ei, err := DockerClient.ContainerExecInspect(ctx, ec.ID)
 		if err != nil {
 			return -1, err
 		}
@@ -153,7 +153,7 @@ func McExec(cid string, cmd []string) (int, error) {
 		}
 	}
 
-	ei, err := DockerClient.ContainerExecInspect(context.TODO(), ec.ID)
+	ei, err := DockerClient.ContainerExecInspect(ctx, ec.ID)
 	if err != nil {
 		return -1, err
 	}
