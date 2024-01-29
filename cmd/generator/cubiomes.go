@@ -33,8 +33,7 @@ func Cubiomes() {
 			defer cancel()
 
 			log.Println("info starting new cubiomes thread")
-			cmdCubiomes := exec.CommandContext(ctx, "./a.out")
-			outCubiomes, err := cmdCubiomes.Output()
+			outCubiomes, err := exec.CommandContext(ctx, "./cubiomes").Output()
 			outCubiomesArr := strings.Split(string(outCubiomes), ":")
 			if err != nil {
 				log.Printf("warning cubiomes job exited %v", err)

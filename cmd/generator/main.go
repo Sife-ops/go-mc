@@ -4,14 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
+	"os/signal"
+	"strconv"
 	"time"
-
-	"github.com/manifoldco/promptui"
 )
 
-// todo move to flags
-var UseCubiomes = true    // generate a random seed
-var UseDocker = true      // generate world files
 var RavineProximity = 112 // radius
 var RavineOffsetNegative = RavineProximity
 var RavineOffsetPositive = RavineProximity + 15
@@ -37,9 +36,16 @@ func init() {
 
 // todo html
 // todo ability to load unfinished seeds
-// todo more context timeout
-// todo cubiomes lives after ctrl-c
 func main() {
+	go func() {
+		sigchan := make(chan os.Signal)
+		signal.Notify(sigchan, os.Interrupt)
+		<-sigchan
+		log.Printf("info kill cubiomes processes")
+		exec.Command("pkill", "cubiomes").Output()
+		os.Exit(0)
+	}()
+
 	flag.Parse() // todo move to init?
 	defer close(CubiomesInProg)
 	defer close(CubiomesDone)
@@ -48,39 +54,7 @@ func main() {
 	defer close(WorldgenDone)
 	defer close(WorldgenDilating)
 
-	if !UseCubiomes {
-		log.Printf("info using set seed")
-		goto SetSeed
-	}
-
 	go Cubiomes()
-
-	log.Printf("info taking it 2 teh next lvl ^_-")
-	goto Worldgen
-
-SetSeed:
-	// vvv DEBUG SEED vvv
-	CubiomesOut <- GodSeed{
-		// Seed: "-6916114155717537644",
-		Seed: "-448396564840034738",
-		Spawn: Coords{
-			X: -112,
-			Z: -112,
-		},
-		Shipwreck: Coords{
-			X: -80,
-			Z: -96,
-		},
-		Bastion: Coords{
-			X: 96,
-			Z: -16,
-		},
-		Fortress: Coords{
-			X: -112,
-			Z: -96,
-		},
-	}
-	// ^^^ DEBUG SEED ^^^
 
 Worldgen:
 	for {
@@ -89,29 +63,40 @@ Worldgen:
 			log.Printf("########### WORLDGEN IS DILATING ###########")
 			log.Printf("job: %v", j)
 
-			prompt := promptui.Select{
-				Label: "Select Action",
-				Items: []string{
-					"Retry (end of queue)",
-					"Go next (save progress)",
-					fmt.Sprintf("Quit with %d remaining", *FlagJobs-len(WorldgenDone)),
-				},
-			}
+			PromptIndex := make(chan int)
+			go func() {
+				fmt.Printf(">>> select action\n")
+				fmt.Printf(">>> 1) go next (save progress) (default)\n")
+				fmt.Printf(">>> 2) add to end of queue\n")
+				fmt.Printf(">>> 3) quit with %d worldgen jobs remaining\n", *FlagJobs-len(WorldgenDone))
+				var action string
+				fmt.Scanln(&action)
+				actionInt, err := strconv.Atoi(action)
+				if err != nil || actionInt < 1 || actionInt > 3 {
+					PromptIndex <- 0
+					return
+				}
+				PromptIndex <- actionInt - 1
+			}()
 
-			promptIndex, _, err := prompt.Run()
-			if err != nil {
-				log.Fatalf("error prompt failed %v", err)
-			}
-
-			switch promptIndex {
-			case 0:
-				CubiomesOut <- j
-			case 1:
+			select {
+			case <-time.After(5 * time.Second):
+				log.Printf("info progress saved")
 				WorldgenDone <- struct{}{}
-			case 2:
-				fallthrough
-			default:
-				break Worldgen
+			case promptIndex := <-PromptIndex:
+				switch promptIndex {
+				case 0:
+					log.Printf("info progress saved")
+					WorldgenDone <- struct{}{}
+				case 1:
+					log.Printf("info added to queue")
+					CubiomesOut <- j
+				case 2:
+					fallthrough
+				default:
+					log.Printf("info exiting")
+					break Worldgen
+				}
 			}
 
 			<-WorldgenInProg

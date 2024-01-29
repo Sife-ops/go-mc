@@ -26,3 +26,4 @@ data/packetid/generate.go
 seed.txt
 dev.log
 /db.sqlite
+/cubiomes

@@ -78,3 +78,24 @@ func ToSector(i int) int {
 	}
 	return i
 }
+
+var DebugSeed = GodSeed{
+	// Seed: "-6916114155717537644",
+	Seed: "-448396564840034738",
+	Spawn: Coords{
+		X: -112,
+		Z: -112,
+	},
+	Shipwreck: Coords{
+		X: -80,
+		Z: -96,
+	},
+	Bastion: Coords{
+		X: 96,
+		Z: -16,
+	},
+	Fortress: Coords{
+		X: -112,
+		Z: -96,
+	},
+}

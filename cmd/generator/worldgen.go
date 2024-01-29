@@ -38,7 +38,7 @@ func Worldgen() {
 	}
 
 	log.Printf("info deleting previous world folder")
-	cmdRmRfWorld := exec.Command("rm", "-rf",
+	cmdRmRfWorld := exec.CommandContext(ctx, "rm", "-rf",
 		fmt.Sprintf("%s/tmp/mc/data/world", MustString(os.Getwd())),
 	)
 	if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
@@ -397,7 +397,6 @@ func Worldgen() {
 
 	log.Printf("info saving seed")
 
-	// todo do update here, create record in the cubiomes stage
 	if _, err := Db.Exec(
 		`UPDATE seed SET ravine_chunks=$1, iron_shipwrecks=$2, avg_bastion_air=$3, finished_worldgen=1 WHERE seed=$4`,
 		len(magmaRavineChunks), len(shipwrecksWithIron), percentageOfAirAvg, job.Seed,
