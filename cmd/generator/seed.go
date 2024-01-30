@@ -4,35 +4,54 @@ import (
 	"math"
 )
 
+type GodSeed struct {
+	Id   int     `db:"id"`
+	Seed *string `db:"seed"`
+
+	RavineProximity *int `db:"ravine_proximity"`
+	RavineChunks    *int `db:"ravine_chunks"`
+	IronShipwrecks  *int `db:"iron_shipwrecks"`
+	AvgBastionAir   *int `db:"abg_bastion_air"`
+
+	Played *int `db:"played"`
+	Rating *int `db:"rating"`
+
+	SpawnX     *int `db:"spawn_x"`
+	SpawnZ     *int `db:"spawn_z"`
+	BastionX   *int `db:"bastion_x"`
+	BastionZ   *int `db:"bastion_z"`
+	ShipwreckX *int `db:"shipwreck_x"`
+	ShipwreckZ *int `db:"shipwreck_z"`
+	FortressX  *int `db:"fortress_x"`
+	FortressZ  *int `db:"fortress_z"`
+
+	FinishedCubiomes *int `db:"finished_cubiomes"`
+	FinishedWorldgen *int `db:"finished_worldgen"`
+
+	Timestamp string `db:"timestamp"`
+}
+
 type Coords struct {
 	X int
 	Z int
 }
 
-type GodSeed struct {
-	Seed      string // todo mb use int?
-	Spawn     Coords
-	Shipwreck Coords
-	Bastion   Coords
-	Fortress  Coords
-}
-
 func (g *GodSeed) RavineArea() (int, int, int, int) {
-	return g.Shipwreck.X - RavineOffsetNegative,
-		g.Shipwreck.Z - RavineOffsetNegative,
-		g.Shipwreck.X + RavineOffsetPositive,
-		g.Shipwreck.Z + RavineOffsetPositive
+	return *g.ShipwreckX - RavineOffsetNegative,
+		*g.ShipwreckZ - RavineOffsetNegative,
+		*g.ShipwreckX + RavineOffsetPositive,
+		*g.ShipwreckZ + RavineOffsetPositive
 }
 
 func (g *GodSeed) ShipwreckArea() (int, int, int, int) {
-	return g.Shipwreck.X - 16,
-		g.Shipwreck.Z - 16,
-		g.Shipwreck.X + 31,
-		g.Shipwreck.Z + 31
+	return *g.ShipwreckX - 16,
+		*g.ShipwreckZ - 16,
+		*g.ShipwreckX + 31,
+		*g.ShipwreckZ + 31
 }
 
 func (g *GodSeed) NetherChunksToBastion() (netherChunks2Load []Coords) {
-	bz, bx := g.Bastion.Z+8, g.Bastion.X+8
+	bz, bx := *g.BastionZ+8, *g.BastionX+8
 	// log.Printf("info bastion chunk center coords %d,%d", bx, bz)
 	s := float64(bz) / float64(bx)
 	// log.Printf("info bastion slope %f", s)
@@ -65,6 +84,21 @@ func MustInt(i int, err error) int {
 	return i
 }
 
+func MustIntRef(i int, err error) *int {
+	if err != nil {
+		panic(err)
+	}
+	return &i
+}
+
+func ToStringRef(i string) *string {
+	return &i
+}
+
+func ToIntRef(i int) *int {
+	return &i
+}
+
 func MustString(i string, err error) string {
 	if err != nil {
 		panic(err)
@@ -79,23 +113,24 @@ func ToSector(i int) int {
 	return i
 }
 
-var DebugSeed = GodSeed{
-	// Seed: "-6916114155717537644",
-	Seed: "-448396564840034738",
-	Spawn: Coords{
-		X: -112,
-		Z: -112,
-	},
-	Shipwreck: Coords{
-		X: -80,
-		Z: -96,
-	},
-	Bastion: Coords{
-		X: 96,
-		Z: -16,
-	},
-	Fortress: Coords{
-		X: -112,
-		Z: -96,
-	},
-}
+// todo delete
+// var DebugSeed = GodSeed{
+// 	// Seed: "-6916114155717537644",
+// 	Seed: "-448396564840034738",
+// 	Spawn: Coords{
+// 		X: -112,
+// 		Z: -112,
+// 	},
+// 	Shipwreck: Coords{
+// 		X: -80,
+// 		Z: -96,
+// 	},
+// 	Bastion: Coords{
+// 		X: 96,
+// 		Z: -16,
+// 	},
+// 	Fortress: Coords{
+// 		X: -112,
+// 		Z: -96,
+// 	},
+// }

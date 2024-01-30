@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-var RavineProximity = 112 // radius
-var RavineOffsetNegative = RavineProximity
-var RavineOffsetPositive = RavineProximity + 15
+var RavineProximity = 4 // chunk radius
+var RavineOffsetNegative = RavineProximity * 16
+var RavineOffsetPositive = RavineOffsetNegative + 15
 
 var FlagThreads = flag.Int("t", 2, "threads")
 var FlagJobs = flag.Int("j", 2, "jobs")
@@ -80,7 +80,7 @@ Worldgen:
 			}()
 
 			select {
-			case <-time.After(5 * time.Second):
+			case <-time.After(10 * time.Second):
 				log.Printf("info progress saved")
 				WorldgenDone <- struct{}{}
 			case promptIndex := <-PromptIndex:

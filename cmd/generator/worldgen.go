@@ -384,8 +384,8 @@ func Worldgen() {
 
 	log.Println()
 	log.Printf("info *+*+*+*+* GENERATED GOD SEED *+*+*+*+*")
-	log.Printf("info > seed: %s", job.Seed)
-	log.Printf("info > magma ravine chunks: %d (%v)", len(magmaRavineChunks), magmaRavineChunks)
+	log.Printf("info > seed: %s", *job.Seed)
+	log.Printf("info > magma ravine chunks within %d chunks: %d (%v)", RavineProximity, len(magmaRavineChunks), magmaRavineChunks)
 	log.Printf("info > shipwrecks with iron: %d (%v)", len(shipwrecksWithIron), shipwrecksWithIron)
 	log.Printf("info > pc.s of air toward bastion: %v", percentageOfAir)
 	if len(percentageOfAir) > 0 {
@@ -398,8 +398,8 @@ func Worldgen() {
 	log.Printf("info saving seed")
 
 	if _, err := Db.Exec(
-		`UPDATE seed SET ravine_chunks=$1, iron_shipwrecks=$2, avg_bastion_air=$3, finished_worldgen=1 WHERE seed=$4`,
-		len(magmaRavineChunks), len(shipwrecksWithIron), percentageOfAirAvg, job.Seed,
+		`UPDATE seed SET ravine_chunks=$1, iron_shipwrecks=$2, ravine_proximity=$3, avg_bastion_air=$4, finished_worldgen=1 WHERE seed=$5`,
+		len(magmaRavineChunks), len(shipwrecksWithIron), RavineProximity, percentageOfAirAvg, *job.Seed,
 	); err != nil {
 		log.Printf("error %v", err)
 		WorldgenDilating <- job

@@ -63,7 +63,7 @@ func RemoveMcContainer(ctx context.Context) error {
 	return nil
 }
 
-func ContainerCreateMc(ctx context.Context, seed string) (container.CreateResponse, error) {
+func ContainerCreateMc(ctx context.Context, seed *string) (container.CreateResponse, error) {
 	return DockerClient.ContainerCreate(
 		ctx,
 		&container.Config{
@@ -73,7 +73,7 @@ func ContainerCreateMc(ctx context.Context, seed string) (container.CreateRespon
 			Env: []string{
 				"EULA=true",
 				"VERSION=1.16.1",
-				fmt.Sprintf("SEED=%s", seed),
+				fmt.Sprintf("SEED=%s", *seed),
 				"MEMORY=2G",
 			},
 			// todo remove volumes?

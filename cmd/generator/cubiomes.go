@@ -43,28 +43,24 @@ func Cubiomes() {
 
 			{
 				gs := GodSeed{
-					Seed: outCubiomesArr[0],
-					Spawn: Coords{
-						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
-						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
-					},
-					Shipwreck: Coords{
-						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
-						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
-					},
-					Bastion: Coords{
-						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
-						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
-					},
-					Fortress: Coords{
-						X: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
-						Z: MustInt(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
-					},
+					Seed:             ToStringRef(outCubiomesArr[0]),
+					SpawnX:           MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
+					SpawnZ:           MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
+					ShipwreckX:       MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
+					ShipwreckZ:       MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
+					BastionX:         MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
+					BastionZ:         MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
+					FortressX:        MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
+					FortressZ:        MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
+					FinishedCubiomes: ToIntRef(1),
 				}
 
-				if _, err := Db.Exec(
-					`INSERT INTO seed (seed, spawn_x, spawn_z, bastion_x, bastion_z, shipwreck_x, shipwreck_z, fortress_x, fortress_z, finished_cubiomes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1)`,
-					gs.Seed, gs.Spawn.X, gs.Spawn.Z, gs.Bastion.X, gs.Bastion.Z, gs.Shipwreck.X, gs.Shipwreck.Z, gs.Fortress.X, gs.Fortress.Z,
+				if _, err := Db.NamedExec(
+					`INSERT INTO seed (
+						seed, spawn_x, spawn_z, bastion_x, bastion_z, shipwreck_x, shipwreck_z, fortress_x, fortress_z, finished_cubiomes) 
+					VALUES 
+						(:seed, :spawn_x, :spawn_z, :bastion_x, :bastion_z, :shipwreck_x, :shipwreck_z, :fortress_x, :fortress_z, :finished_cubiomes)`,
+					&gs,
 				); err != nil {
 					log.Fatalf("error %v", err)
 				}
