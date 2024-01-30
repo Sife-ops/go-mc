@@ -76,10 +76,6 @@ func ContainerCreateMc(ctx context.Context, seed *string) (container.CreateRespo
 				fmt.Sprintf("SEED=%s", *seed),
 				"MEMORY=2G",
 			},
-			// todo remove volumes?
-			Volumes: map[string]struct{}{
-				"./tmp/mc/data:/data": {},
-			},
 		},
 		&container.HostConfig{
 			Mounts: []mount.Mount{

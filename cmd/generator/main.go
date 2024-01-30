@@ -1,11 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strconv"
 	"time"
@@ -18,17 +18,16 @@ var RavineOffsetPositive = RavineOffsetNegative + 15
 var FlagThreads = flag.Int("t", 2, "threads")
 var FlagJobs = flag.Int("j", 2, "jobs")
 
-var CubiomesInProg chan struct{}
+var CubiomesCtx, CancelCubiomesCtx = context.WithCancel(context.Background())
 var CubiomesDone chan struct{}
 var CubiomesOut chan GodSeed
 
-var WorldgenInProg = make(chan struct{}, 1)
+var WorldgenCtx, CancelWorldgenCtx = context.WithCancel(context.Background())
 var WorldgenDone chan struct{}
-var WorldgenDilating = make(chan GodSeed)
+var WorldgenRecovering = make(chan GodSeed)
 
 func init() {
 	flag.Parse()
-	CubiomesInProg = make(chan struct{}, *FlagThreads)
 	CubiomesDone = make(chan struct{}, *FlagJobs)
 	CubiomesOut = make(chan GodSeed, *FlagJobs)
 	WorldgenDone = make(chan struct{}, *FlagJobs)
@@ -37,30 +36,35 @@ func init() {
 // todo html
 // todo ability to load unfinished seeds
 func main() {
+	defer CancelCubiomesCtx()
+	defer close(CubiomesDone)
+	defer close(CubiomesOut)
+	defer CancelWorldgenCtx()
+	defer close(WorldgenDone)
+	defer close(WorldgenRecovering)
+
 	go func() {
 		sigchan := make(chan os.Signal)
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
-		log.Printf("info kill cubiomes processes")
-		exec.Command("pkill", "cubiomes").Output()
+		log.Printf("info cleaning up")
+		CancelCubiomesCtx()
+		CancelWorldgenCtx()
 		os.Exit(0)
 	}()
 
-	flag.Parse() // todo move to init?
-	defer close(CubiomesInProg)
-	defer close(CubiomesDone)
-	defer close(CubiomesOut)
-	defer close(WorldgenInProg)
-	defer close(WorldgenDone)
-	defer close(WorldgenDilating)
-
-	go Cubiomes()
+	for i := 0; i < *FlagThreads; i++ {
+		go Cubiomes(CubiomesCtx, CancelCubiomesCtx)
+	}
 
 Worldgen:
 	for {
 		select {
-		case j := <-WorldgenDilating:
-			log.Printf("########### WORLDGEN IS DILATING ###########")
+		case <-WorldgenCtx.Done():
+			return
+
+		case j := <-WorldgenRecovering:
+			log.Printf("########### WORLDGEN IS RECOVERING ###########")
 			log.Printf("job: %v", j)
 
 			PromptIndex := make(chan int)
@@ -80,7 +84,7 @@ Worldgen:
 			}()
 
 			select {
-			case <-time.After(10 * time.Second):
+			case <-time.After(30 * time.Second):
 				log.Printf("info progress saved")
 				WorldgenDone <- struct{}{}
 			case promptIndex := <-PromptIndex:
@@ -99,18 +103,8 @@ Worldgen:
 				}
 			}
 
-			<-WorldgenInProg
-
-		case <-time.After(100 * time.Millisecond):
-			if len(WorldgenDone) >= *FlagJobs {
-				break Worldgen
-			}
-			if len(WorldgenInProg) >= 1 {
-				continue
-			}
-
-			WorldgenInProg <- struct{}{}
-			go Worldgen()
+		default:
+			Worldgen(WorldgenCtx, CancelWorldgenCtx)
 		}
 	}
 }

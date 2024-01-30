@@ -2,79 +2,68 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"math/rand"
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 )
 
-func Cubiomes() {
+func Cubiomes(ctx context.Context, cancel context.CancelFunc) {
 	for {
-		<-time.After(100 * time.Millisecond)
-
-		if len(CubiomesDone) >= *FlagJobs {
+		select {
+		case <-ctx.Done():
 			return
-		}
-		todo := *FlagJobs - len(CubiomesDone)
-		if todo >= *FlagThreads {
-			if len(CubiomesInProg) >= *FlagThreads {
-				continue
-			}
-		} else {
-			if len(CubiomesInProg) >= todo {
-				continue
-			}
-		}
+		default:
+			seed := rand.Uint64()
+			// log.Printf("info checking seed %d", int64(seed))
 
-		CubiomesInProg <- struct{}{}
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			defer cancel()
-
-			log.Println("info starting new cubiomes thread")
-			outCubiomes, err := exec.CommandContext(ctx, "./cubiomes").Output()
-			outCubiomesArr := strings.Split(string(outCubiomes), ":")
+			execCubiomes := exec.CommandContext(
+				context.TODO(),
+				"./cubiomes", fmt.Sprintf("%d", int64(seed)),
+			)
+			outCubiomes, err := execCubiomes.Output()
 			if err != nil {
-				log.Printf("warning cubiomes job exited %v", err)
-				goto CubiomesExit
+				if err.Error() != "exit status 33" {
+					log.Printf("warning %s", err.Error())
+				}
+				continue
 			}
 			log.Printf("info cubiomes output: %s", string(outCubiomes))
+			log.Printf("info %v passed cubiomes", seed)
 
-			{
-				gs := GodSeed{
-					Seed:             ToStringRef(outCubiomesArr[0]),
-					SpawnX:           MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
-					SpawnZ:           MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
-					ShipwreckX:       MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
-					ShipwreckZ:       MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
-					BastionX:         MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
-					BastionZ:         MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
-					FortressX:        MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[0])),
-					FortressZ:        MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[4], ",")[1])),
-					FinishedCubiomes: ToIntRef(1),
-				}
+			CubiomesDone <- struct{}{}
+			log.Printf("info finished %d cubiomes jobs", len(CubiomesDone))
+			if len(CubiomesDone) >= *FlagJobs {
+				log.Printf("info ALL DONE with cubiomes jobs")
+				cancel()
+			}
 
-				if _, err := Db.NamedExec(
-					`INSERT INTO seed (
+			outCubiomesArr := strings.Split(string(outCubiomes), ":")
+			godSeed := GodSeed{
+				Seed:             ToStringRef(fmt.Sprintf("%d", int64(seed))),
+				SpawnX:           MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[0], ",")[0])),
+				SpawnZ:           MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[0], ",")[1])),
+				ShipwreckX:       MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[0])),
+				ShipwreckZ:       MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[1], ",")[1])),
+				BastionX:         MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[0])),
+				BastionZ:         MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[2], ",")[1])),
+				FortressX:        MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[0])),
+				FortressZ:        MustIntRef(strconv.Atoi(strings.Split(outCubiomesArr[3], ",")[1])),
+				FinishedCubiomes: ToIntRef(1),
+			}
+			if _, err := Db.NamedExec(
+				`INSERT INTO seed (
 						seed, spawn_x, spawn_z, bastion_x, bastion_z, shipwreck_x, shipwreck_z, fortress_x, fortress_z, finished_cubiomes) 
 					VALUES 
 						(:seed, :spawn_x, :spawn_z, :bastion_x, :bastion_z, :shipwreck_x, :shipwreck_z, :fortress_x, :fortress_z, :finished_cubiomes)`,
-					&gs,
-				); err != nil {
-					log.Fatalf("error %v", err)
-				}
-
-				CubiomesOut <- gs
+				&godSeed,
+			); err != nil {
+				log.Fatalf("error %v", err)
 			}
 
-			CubiomesDone <- struct{}{}
-			log.Printf("info finished cubiomes job %d", len(CubiomesDone))
-
-		CubiomesExit:
-			log.Println("info freeing cubiomes thread")
-			<-CubiomesInProg
-		}()
+			CubiomesOut <- godSeed
+		}
 	}
-
 }

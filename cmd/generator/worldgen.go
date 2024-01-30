@@ -15,17 +15,14 @@ import (
 	"github.com/Tnze/go-mc/save/region"
 )
 
-func Worldgen() {
+func Worldgen(ctx context.Context, cancel context.CancelFunc) {
 	job := <-CubiomesOut
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	log.Printf("info killing old container")
 	if err := KillMcContainer(ctx); err != nil {
 		if !strings.Contains(err.Error(), "is not running") {
 			log.Printf("error %v", err)
-			WorldgenDilating <- job
+			WorldgenRecovering <- job
 			return
 		}
 	}
@@ -33,7 +30,7 @@ func Worldgen() {
 	log.Printf("info removing old container")
 	if err := RemoveMcContainer(ctx); err != nil {
 		log.Printf("error %v", err)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	}
 
@@ -43,7 +40,7 @@ func Worldgen() {
 	)
 	if outRmRfWorld, err := cmdRmRfWorld.Output(); err != nil {
 		log.Printf("error deleting world folder: %s %v", string(outRmRfWorld), err)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	}
 
@@ -51,7 +48,7 @@ func Worldgen() {
 	mc, _ := ContainerCreateMc(ctx, job.Seed)
 	if err := DockerClient.ContainerStart(context.TODO(), mc.ID, types.ContainerStartOptions{}); err != nil {
 		log.Printf("error starting minecraft server container: %v", err)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	}
 
@@ -61,7 +58,7 @@ func Worldgen() {
 	log.Printf("info waiting for minecraft server to start")
 	if err := <-McStarted; err != nil {
 		log.Printf("error waiting for minecraft server to start: %v", err)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	}
 
@@ -81,7 +78,7 @@ func Worldgen() {
 			"error rcon forceloading overworld area %d %d %d %d failed: %v",
 			ravineAreaX1, ravineAreaZ1, ravineAreaX2, ravineAreaZ2, err,
 		)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	} else {
 		log.Printf(
@@ -104,7 +101,7 @@ func Worldgen() {
 				"error rcon forceloading nether chunk %d %d failed: %v",
 				err, v.X, v.Z,
 			)
-			WorldgenDilating <- job
+			WorldgenRecovering <- job
 			return
 		}
 	}
@@ -113,7 +110,7 @@ func Worldgen() {
 	// stop server
 	if ec, err := McExec(ctx, mc.ID, []string{"rcon-cli", "stop"}); ec != 0 && err != nil {
 		log.Printf("error rcon stopping server: %v", err)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	} else {
 		log.Printf("info rcon stopped server")
@@ -122,7 +119,7 @@ func Worldgen() {
 	log.Printf("info waiting for minecraft server to stop")
 	if err := <-McStopped; err != nil {
 		log.Printf("error %v", err)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	}
 
@@ -191,7 +188,7 @@ func Worldgen() {
 		if err != nil {
 			// todo printf job every time u dilate
 			log.Printf("error skipping job: %v due to error: %v", job, err)
-			WorldgenDilating <- job
+			WorldgenRecovering <- job
 			return
 		}
 
@@ -205,7 +202,7 @@ func Worldgen() {
 				data, err := region.ReadSector(ToSector(xC), ToSector(zC))
 				if err != nil {
 					log.Printf("error %v", err)
-					WorldgenDilating <- job
+					WorldgenRecovering <- job
 					return
 				}
 
@@ -213,14 +210,14 @@ func Worldgen() {
 				err = chunkSave.Load(data)
 				if err != nil {
 					log.Printf("error %v", err)
-					WorldgenDilating <- job
+					WorldgenRecovering <- job
 					return
 				}
 
 				chunkLevel, err := level.ChunkFromSave(&chunkSave)
 				if err != nil {
 					log.Printf("error %v", err)
-					WorldgenDilating <- job
+					WorldgenRecovering <- job
 					return
 				}
 
@@ -289,14 +286,14 @@ func Worldgen() {
 				data, err := region.ReadSector(ToSector(xC), ToSector(zC))
 				if err != nil {
 					log.Printf("error %v", err)
-					WorldgenDilating <- job
+					WorldgenRecovering <- job
 					return
 				}
 				var chunkSave save.Chunk
 				err = chunkSave.Load(data)
 				if err != nil {
 					log.Printf("error %v", err)
-					WorldgenDilating <- job
+					WorldgenRecovering <- job
 					return
 				}
 				if len(chunkSave.Level.Structures.Starts.Shipwreck.Children) < 1 {
@@ -336,7 +333,7 @@ func Worldgen() {
 		// log.Fatalf("error %v", err)
 		log.Printf("warning skipping this seed: %v", err)
 		log.Printf("%v", job)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	}
 
@@ -348,7 +345,7 @@ func Worldgen() {
 		data, err := region.ReadSector(ToSector(v.X), ToSector(v.Z))
 		if err != nil {
 			log.Printf("error %v", err)
-			WorldgenDilating <- job
+			WorldgenRecovering <- job
 			return
 		}
 
@@ -356,14 +353,14 @@ func Worldgen() {
 		err = chunkSave.Load(data)
 		if err != nil {
 			log.Printf("error %v", err)
-			WorldgenDilating <- job
+			WorldgenRecovering <- job
 			return
 		}
 
 		chunkLevel, err := level.ChunkFromSave(&chunkSave)
 		if err != nil {
 			log.Printf("error %v", err)
-			WorldgenDilating <- job
+			WorldgenRecovering <- job
 			return
 		}
 
@@ -402,11 +399,14 @@ func Worldgen() {
 		len(magmaRavineChunks), len(shipwrecksWithIron), RavineProximity, percentageOfAirAvg, *job.Seed,
 	); err != nil {
 		log.Printf("error %v", err)
-		WorldgenDilating <- job
+		WorldgenRecovering <- job
 		return
 	}
 
 	WorldgenDone <- struct{}{}
 	log.Printf("info finished worldgen job %d", len(WorldgenDone))
-	<-WorldgenInProg
+
+	if len(WorldgenDone) >= *FlagJobs {
+		cancel()
+	}
 }
