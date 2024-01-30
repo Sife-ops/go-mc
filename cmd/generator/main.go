@@ -16,12 +16,13 @@ var RavineOffsetPositive = RavineOffsetNegative + 15
 
 var FlagThreads = flag.Int("t", 2, "threads")
 var FlagJobs = flag.Int("j", 2, "jobs")
+var FlagPrune = flag.Bool("p", false, "prune")
 
 var CubiomesDone chan struct{}
 var CubiomesOut chan GodSeed
 
 var WorldgenDone chan struct{}
-var WorldgenRecovering = make(chan GodSeed)
+var WorldgenRecovering = make(chan GodSeed, 1)
 
 func init() {
 	flag.Parse()
@@ -43,7 +44,7 @@ func main() {
 		sigchan := make(chan os.Signal)
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
-		log.Printf("info cleaning up")
+		// log.Printf("info cleaning up")
 		os.Exit(0)
 	}()
 
@@ -55,17 +56,17 @@ func main() {
 		}()
 	}
 
-Worldgen:
 	for len(WorldgenDone) < *FlagJobs {
 		select {
 		case j := <-WorldgenRecovering:
-			log.Printf("########### WORLDGEN IS RECOVERING ###########")
+			// todo force a recovery
+			log.Printf("########### WORLDGEN RECOVERING ###########")
 			log.Printf("job: %v", j)
 
 			PromptIndex := make(chan int)
 			go func() {
 				fmt.Printf(">>> select action\n")
-				fmt.Printf(">>> 1) go next (save progress) (default)\n")
+				fmt.Printf(">>> 1) go next (default)\n")
 				fmt.Printf(">>> 2) add to end of queue\n")
 				fmt.Printf(">>> 3) quit with %d worldgen jobs remaining\n", *FlagJobs-len(WorldgenDone))
 				var action string
@@ -80,26 +81,53 @@ Worldgen:
 
 			select {
 			case <-time.After(30 * time.Second):
-				log.Printf("info progress saved")
 				WorldgenDone <- struct{}{}
+				log.Printf("info continuing")
 			case promptIndex := <-PromptIndex:
 				switch promptIndex {
 				case 0:
-					log.Printf("info progress saved")
 					WorldgenDone <- struct{}{}
+					log.Printf("info continuing")
 				case 1:
-					log.Printf("info added to queue")
 					CubiomesOut <- j
+					log.Printf("info added to queue")
 				case 2:
 					fallthrough
 				default:
 					log.Printf("info exiting")
-					break Worldgen
+					return
 				}
 			}
 
 		default:
 			Worldgen()
 		}
+	}
+
+	if *FlagPrune {
+		Prune()
+	}
+}
+
+func Prune() {
+	if _, err := Db.Exec(
+		`DELETE FROM seed
+		WHERE iron_shipwrecks<1`,
+	); err != nil {
+		log.Fatalf("error %v", err)
+	}
+
+	if _, err := Db.Exec(
+		`DELETE FROM seed
+		WHERE ravine_chunks<5`,
+	); err != nil {
+		log.Fatalf("error %v", err)
+	}
+
+	if _, err := Db.Exec(
+		`DELETE FROM seed
+		WHERE ravine_proximity IS NULL`,
+	); err != nil {
+		log.Fatalf("error %v", err)
 	}
 }

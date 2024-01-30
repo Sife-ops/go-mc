@@ -25,8 +25,9 @@ func Cubiomes() {
 		}
 		return
 	}
-	log.Printf("info cubiomes output: %s", string(outCubiomes))
-	log.Printf("info %v passed cubiomes", seed)
+
+	// log.Printf("info cubiomes output: %s", string(outCubiomes))
+	// log.Printf("info %v passed cubiomes", seed)
 
 	outCubiomesArr := strings.Split(string(outCubiomes), ":")
 	godSeed := GodSeed{
@@ -42,14 +43,15 @@ func Cubiomes() {
 		FinishedCubiomes: ToIntRef(1),
 	}
 	if _, err := Db.NamedExec(
-		`INSERT INTO seed (
-			seed, spawn_x, spawn_z, bastion_x, bastion_z, shipwreck_x, shipwreck_z, fortress_x, fortress_z, finished_cubiomes) 
+		`INSERT INTO seed 
+			(seed, spawn_x, spawn_z, bastion_x, bastion_z, shipwreck_x, shipwreck_z, fortress_x, fortress_z, finished_cubiomes)
 		VALUES 
 			(:seed, :spawn_x, :spawn_z, :bastion_x, :bastion_z, :shipwreck_x, :shipwreck_z, :fortress_x, :fortress_z, :finished_cubiomes)`,
 		&godSeed,
 	); err != nil {
 		log.Fatalf("error %v", err)
 	}
+	log.Printf("info saving cubiomes results %v", godSeed)
 
 	if len(CubiomesDone) < *FlagJobs {
 		CubiomesDone <- struct{}{}
