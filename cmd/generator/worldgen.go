@@ -15,8 +15,10 @@ import (
 	"github.com/Tnze/go-mc/save/region"
 )
 
-func Worldgen(ctx context.Context, cancel context.CancelFunc) {
+func Worldgen() {
 	job := <-CubiomesOut
+
+	ctx := context.Background()
 
 	log.Printf("info killing old container")
 	if err := KillMcContainer(ctx); err != nil {
@@ -186,7 +188,6 @@ func Worldgen(ctx context.Context, cancel context.CancelFunc) {
 			MustString(os.Getwd()), regionX, regionZ,
 		))
 		if err != nil {
-			// todo printf job every time u dilate
 			log.Printf("error skipping job: %v due to error: %v", job, err)
 			WorldgenRecovering <- job
 			return
@@ -330,7 +331,6 @@ func Worldgen(ctx context.Context, cancel context.CancelFunc) {
 		MustString(os.Getwd()), netherChunkCoords[0].X, netherChunkCoords[0].Z,
 	))
 	if err != nil {
-		// log.Fatalf("error %v", err)
 		log.Printf("warning skipping this seed: %v", err)
 		log.Printf("%v", job)
 		WorldgenRecovering <- job
@@ -403,10 +403,8 @@ func Worldgen(ctx context.Context, cancel context.CancelFunc) {
 		return
 	}
 
-	WorldgenDone <- struct{}{}
-	log.Printf("info finished worldgen job %d", len(WorldgenDone))
-
-	if len(WorldgenDone) >= *FlagJobs {
-		cancel()
+	if len(WorldgenDone) < *FlagJobs {
+		WorldgenDone <- struct{}{}
+		log.Printf("info finished worldgen job %d", len(WorldgenDone))
 	}
 }

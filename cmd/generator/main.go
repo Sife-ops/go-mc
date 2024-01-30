@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -18,11 +17,9 @@ var RavineOffsetPositive = RavineOffsetNegative + 15
 var FlagThreads = flag.Int("t", 2, "threads")
 var FlagJobs = flag.Int("j", 2, "jobs")
 
-var CubiomesCtx, CancelCubiomesCtx = context.WithCancel(context.Background())
 var CubiomesDone chan struct{}
 var CubiomesOut chan GodSeed
 
-var WorldgenCtx, CancelWorldgenCtx = context.WithCancel(context.Background())
 var WorldgenDone chan struct{}
 var WorldgenRecovering = make(chan GodSeed)
 
@@ -35,11 +32,10 @@ func init() {
 
 // todo html
 // todo ability to load unfinished seeds
+// todo c interop w/ cubiomes https://karthikkaranth.me/blog/calling-c-code-from-go/
 func main() {
-	defer CancelCubiomesCtx()
 	defer close(CubiomesDone)
 	defer close(CubiomesOut)
-	defer CancelWorldgenCtx()
 	defer close(WorldgenDone)
 	defer close(WorldgenRecovering)
 
@@ -48,21 +44,20 @@ func main() {
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
 		log.Printf("info cleaning up")
-		CancelCubiomesCtx()
-		CancelWorldgenCtx()
 		os.Exit(0)
 	}()
 
 	for i := 0; i < *FlagThreads; i++ {
-		go Cubiomes(CubiomesCtx, CancelCubiomesCtx)
+		go func() {
+			for len(CubiomesDone) < *FlagJobs {
+				Cubiomes()
+			}
+		}()
 	}
 
 Worldgen:
-	for {
+	for len(WorldgenDone) < *FlagJobs {
 		select {
-		case <-WorldgenCtx.Done():
-			return
-
 		case j := <-WorldgenRecovering:
 			log.Printf("########### WORLDGEN IS RECOVERING ###########")
 			log.Printf("job: %v", j)
@@ -104,7 +99,7 @@ Worldgen:
 			}
 
 		default:
-			Worldgen(WorldgenCtx, CancelWorldgenCtx)
+			Worldgen()
 		}
 	}
 }
